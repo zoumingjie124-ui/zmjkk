@@ -2,23 +2,22 @@
 /**
   ******************************************************************************
   * @file    main.c
-  * @brief   智能温控与故障监测终端 —— 程序入口
-  *           （阶段 4+5：PID 闭环 + 控制状态机 + 安全联锁）
+  * @brief   基于 STM32 的智能温控与故障监测终端 —— 程序入口
+  *           （阶段 6/7/8：按键菜单 + Flash 参数 + USART1 上位机通信）
   *
   * 初始化顺序：
   *   1. HAL_Init / SystemClock_Config   72MHz + ADC 时钟 12MHz
   *   2. MX_GPIO_Init                    加热器/风扇先写低再配输出
-  *   3. Control_Init                    状态机 + PID + TIM1 PWM + 风扇（全关）
-  *   4. Sensor_Init                     上电自检决定 SIM/REAL 模式
-  *   5. OLED_Init                       显示
-  *   6. while(1)                        非阻塞时间片调度
+  *   3. Sensor_Init                     上电自检决定 SIM/REAL（含 ADC 自校准）
+  *   4. MX_TIM1_Init + Control_Init      状态机从 INIT 起步，加热/风扇全关
+  *   5. Param_Load                      读 Flash 末页，校验失败回默认
+  *   6. Menu_Init / USART1 / Comm_Init   按键与通信
+  *   7. while(1)                        三档非阻塞时间片
   *
   * 时间片：
-  *   500ms —— Control_Tick()（传感器读取 + 联锁检查 + PID + 风扇）+ OLED 刷新
-  *   1000ms —— 运行秒数
-  *
-  * 本阶段目标温度默认 45.0℃（control.h: CTRL_TARGET_DEFAULT_C），用于观察
-  * 模拟/真实闭环收敛；阶段 6 由按键接管启停与设温。
+  *   10ms  —— Key_Scan + Menu_Tick + Comm_Tick（按键/协议解析，全部非阻塞）
+  *   500ms —— Control_Tick（联锁→PID→风扇）+ Menu_Render（整屏刷新）
+  *   1000ms—— 运行秒计数
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -29,99 +28,81 @@
 #include "oled.h"
 #include "sensor.h"
 #include "control.h"
+#include "menu.h"
+#include "key.h"
+#include "comm.h"
+#include "usart.h"
+#include "flash_param.h"
+#include "param_codec.h"
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-static void Display_Snapshot(void);
-static void Display_Temp1(uint8_t line, uint8_t col, float temp_c);
 
 int main(void)
 {
+  uint32_t last_10ms   = 0u;
+  uint32_t last_500ms  = 0u;
+  uint32_t last_1000ms = 0u;
+  uint32_t uptime_s    = 0u;
+
   HAL_Init();
   SystemClock_Config();
   MX_GPIO_Init();
 
-  Sensor_Init();            /* 先确定 SIM/REAL（含 ADC 自校准） */
-  Control_Init();           /* 状态机从 INIT 起步，加热/风扇默认全关 */
+  Sensor_Init();            /* 传感器自检：决定 SIM / REAL */
+  MX_TIM1_Init();           /* TIM1 PWM 必须在 Heater_Init 之前 */
+  Control_Init();           /* INIT 状态，加热 0%、风扇关 */
+
+  {
+    /* Flash 参数加载：首次上电或校验失败会自动回默认值 */
+    app_param_t  cfg;
+    ctrl_params_t cp;
+
+    (void)Param_Load(&cfg);
+    cp.target_c = cfg.target_c;
+    cp.kp       = cfg.kp;
+    cp.ki       = cfg.ki;
+    cp.kd       = cfg.kd;
+    Control_ApplyParams(&cp);   /* 内部再校验一次范围，脏数据不会生效 */
+  }
+
+  Menu_Init();
+  MX_USART1_UART_Init();
+  Comm_Init();
 
   OLED_Init();
   OLED_Clear();
+  Usart_StartRx();            /* 接收中断最后开启 */
 
-  uint32_t last_500ms  = HAL_GetTick();
-  uint32_t last_1000ms = HAL_GetTick();
-  uint32_t uptime_s    = 0;
+  last_10ms   = HAL_GetTick();
+  last_500ms  = last_10ms;
+  last_1000ms = last_10ms;
 
   while (1)
   {
     uint32_t now = HAL_GetTick();
 
-    if ((now - last_500ms) >= 500u)          /* 控制周期 = 500ms */
+    if ((now - last_10ms) >= 10u)          /* 按键 + 通信时间片 */
     {
-      last_500ms += 500u;
-      Control_Tick();                        /* 联锁→PID→风扇，一个 tick 全做 */
-      Display_Snapshot();
+      last_10ms += 10u;
+      Key_Scan();
+      Menu_Tick();
+      Comm_Tick();
     }
 
-    if ((now - last_1000ms) >= 1000u)        /* 秒计数时间片 */
+    if ((now - last_500ms) >= 500u)        /* 控制 + 显示时间片 */
+    {
+      last_500ms += 500u;
+      Control_Tick();
+      Menu_Render(uptime_s);
+    }
+
+    if ((now - last_1000ms) >= 1000u)      /* 秒计数 */
     {
       last_1000ms += 1000u;
       uptime_s++;
-      OLED_ShowNum(4, 11, uptime_s, 5);
     }
   }
-}
-
-/**
-  * @brief OLED 刷新（16 列 × 4 行）：
-  *   L1: "RUN  T:44.7C"   状态(INI/STB/RUN/FLT) + 当前温度
-  *   L2: "SET :45.0C"     目标温度
-  *   L3: "H:078% FAN:OFF" 加热占空比 + 风扇
-  *   L4: "SIM  UP:00123"  数据源标识 + 运行秒数
-  *   温度无效时 L1 显示 "T:  ERR"。SIM 标识永不隐藏（诚信约束）。
-  */
-static void Display_Snapshot(void)
-{
-  const ctrl_snapshot_t *s = Control_Get();
-
-  OLED_ShowString(1, 1, Control_StateName());
-  OLED_ShowChar(1, 4, ' ');
-  if (s->temp_valid)
-  {
-    Display_Temp1(1, 7, s->temp_c);
-  }
-  else
-  {
-    OLED_ShowString(1, 7, "T:  ERR   ");
-  }
-
-  OLED_ShowString(2, 1, "SET :");
-  Display_Temp1(2, 6, s->target_c);
-
-  OLED_ShowString(3, 1, "H:");
-  OLED_ShowNum(3, 3, s->duty, 3);
-  OLED_ShowString(3, 6, "% FAN:");
-  OLED_ShowString(3, 11, s->fan_on ? "ON " : "OFF");
-
-  OLED_ShowString(4, 1, s->is_simulated ? "SIM  " : "REAL ");
-  OLED_ShowString(4, 6, "UP:");
-}
-
-/**
-  * @brief 温度一位小数显示（覆盖原位置 12 字符宽，避免残留旧字符）
-  * @note  负温度与超 99.9℃ 不在本项目显示范围，统一显示 ERR
-  */
-static void Display_Temp1(uint8_t line, uint8_t col, float temp_c)
-{
-  int32_t t10 = (int32_t)(temp_c * 10.0f + 0.5f);
-  if (t10 < 0 || t10 > 999)
-  {
-    OLED_ShowString(line, col, "    ERR   ");
-    return;
-  }
-  OLED_ShowNum(line, col,     (uint32_t)(t10 / 10), 2);
-  OLED_ShowChar(line, col + 2, '.');
-  OLED_ShowNum(line, col + 3, (uint32_t)(t10 % 10), 1);
-  OLED_ShowChar(line, col + 4, 'C');
 }
 
 /**
@@ -160,7 +141,7 @@ void SystemClock_Config(void)
 }
 
 /**
-  * @brief 错误处理：停在这里而不是继续跑（调试时打断点定位）
+  * @brief 错误处理：停在这里而不是继续跑（调试时在此打断点）
   */
 void Error_Handler(void)
 {

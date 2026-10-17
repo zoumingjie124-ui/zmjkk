@@ -1,3 +1,6 @@
 MDK-ARM/TempCtrl/
 *.uvguix.*
 __pycache__/
+*.exe
+*.obj
+*.pyc

@@ -7,6 +7,7 @@
   */
 #include "main.h"
 #include "stm32f1xx_it.h"
+#include "usart.h"
 
 /* ---------------------- Cortex-M3 内核异常 ---------------------- */
 void NMI_Handler(void)
@@ -52,4 +53,14 @@ void PendSV_Handler(void)
 void SysTick_Handler(void)
 {
   HAL_IncTick();
+}
+
+/* ---------------------- 外设中断 ------------------------------- */
+
+/**
+  * @brief USART1 中断：收发中断全部转交 HAL
+  */
+void USART1_IRQHandler(void)
+{
+  HAL_UART_IRQHandler(&huart1);
 }

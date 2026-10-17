@@ -17,6 +17,33 @@ void HAL_MspInit(void)
   __HAL_AFIO_REMAP_SWJ_NOJTAG();
 }
 
+/* ------------------------------- USART1 ------------------------------ */
+void HAL_UART_MspInit(UART_HandleTypeDef *huart)
+{
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+  if (huart->Instance == USART1)
+  {
+    __HAL_RCC_USART1_CLK_ENABLE();
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+
+    /* PA9 = TX 复用推挽；PA10 = RX 浮空输入（由 USB-TTL 的 TX 驱动） */
+    GPIO_InitStruct.Pin   = GPIO_PIN_9;
+    GPIO_InitStruct.Mode  = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin  = GPIO_PIN_10;
+    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    /* 优先级 3（最低）：通讯绝不抢占 1ms 时基与安全逻辑 */
+    HAL_NVIC_SetPriority(USART1_IRQn, 3, 0);
+    HAL_NVIC_EnableIRQ(USART1_IRQn);
+  }
+}
+
 /* ------------------------------- ADC1 -------------------------------- */
 void HAL_ADC_MspInit(ADC_HandleTypeDef *hadc)
 {

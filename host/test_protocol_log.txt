@@ -1,0 +1,58 @@
+=== TempCtrl protocol codec tests ===
+T1 CRC16 known vector:
+  [PASS] crc16('123456789')=0x29B1 == 0x29B1
+  [PASS] crc16(empty) == 0xFFFF
+T2 frame layout:
+  [PASS] header=AA 55
+  [PASS] cmd=0x02
+  [PASS] len=4
+  [PASS] total len=10 == 10 (6 + LEN)
+  [PASS] crc covers cmd..payload
+T3 parser round trip / arbitrary chunking:
+  [PASS] whole-buffer feed -> 4 frames
+  [PASS] byte-by-byte feed -> 4 frames
+  [PASS] split parse keeps payload
+  [PASS] chunk-7 feed -> 4 frames
+T4 corrupt frame detected:
+  [PASS] corrupted frame dropped (0 emitted)
+  [PASS] crc_errors=1
+  [PASS] payload bitflip dropped
+  [PASS] crc_errors=1
+T5 length boundary:
+  [PASS] oversized LEN emits nothing
+  [PASS] length_errors=1
+  [PASS] build_frame rejects 33-byte payload
+  [PASS] LEN=32 accepted (upper bound)
+T6 junk bytes / resync:
+  [PASS] resync after junk -> 1 frame
+  [PASS] junk_bytes=6
+T7 status payload decode:
+  [PASS] status payload len=25 == 25
+  [PASS] temp=44.70
+  [PASS] target=45.00
+  [PASS] duty=78
+  [PASS] fan=ON
+  [PASS] state=RUN
+  [PASS] sim=True (SIM 标识透传)
+  [PASS] fault=-
+  [PASS] invalid-temp sentinel decoded as FLT/SENSOR
+  [PASS] parse_status rejects short payload
+T8 client-side range validation:
+  [PASS] target 45.0 valid
+  [PASS] target -1.0 invalid
+  [PASS] target 70.5 invalid (limit 70)
+  [PASS] pid defaults valid
+  [PASS] kp 60 invalid (limit 50)
+  [PASS] ki 6.0 invalid (limit 5)
+  [PASS] kd 25 invalid (limit 20)
+  [PASS] NaN target invalid
+  [PASS] NaN kp invalid
+T9 fuzz (2000 random streams):
+  [PASS] no exceptions in 2000 random streams (decoded=0)
+T10 command encoding vectors:
+  [PASS] START cmd byte 0x03
+  [PASS] SET_TARGET frame len 10 (payload 4)
+  [PASS] SET_PID frame len 18, payload 12
+  [PASS] SET_PID frame parses back
+  [PASS] SET_PID payload=8.00/0.10/1.50
+=== ALL PASS: 46/46 checks passed ===

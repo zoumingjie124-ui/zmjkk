@@ -56,9 +56,9 @@
 | 3 | 加热器 PWM（TIM1_CH1 1kHz）+ 风扇开关 | 编译 0E0W；PA8 波形正确；LED 假负载验证 | 编译【已执行】/ 波形【真实硬件】 | 编译✅ 上板⏳待测试 |
 | 4 | PID 模块（纯 C 无 HAL 依赖）+ 离线单元测试 | 4 类用例全过 | 【模拟】 | ✅ 单测 20/20 通过（宿主机 MSVC） |
 | 5 | 控制状态机 + 闭环联锁 | 联锁动作正确；闭环收敛 | 编译【已执行】/ 闭环【真实硬件】 | 编译✅ 上板⏳待测试 |
-| 6 | 按键与菜单 | 启停/设温/故障确认完整 | 【真实硬件】 | 待测试 |
-| 7 | Flash 参数保存 | 掉电保存、上电恢复 | 【真实硬件】 | 待测试 |
-| 8 | USART1 + Python 上位机 | 实时曲线、远程设温、数据记录 | 【真实硬件】 | 待测试 |
+| 6 | 按键与菜单 | 启停/设温/改 PID/故障确认/保存 | 编译【已执行】/ 按键【真实硬件】 | 编译✅ 上板⏳待测试 |
+| 7 | Flash 参数保存 | 掉电保存、上电恢复、CRC 校验 | 单测【模拟】/ 持久化【真实硬件】 | 单测 21/21 ✅ 上板⏳待测试 |
+| 8 | USART1 + Python 上位机 | 帧协议、定时上报、远程控制、GUI/CLI | 协议测试【模拟】/ 链路【真实硬件】 | 协议 46/46 ✅ 上板⏳待测试 |
 
 ---
 
@@ -242,4 +242,112 @@ T4 invalid input interception:
 ### 5.6 遗留问题
 1. PID 参数与模拟模型匹配良好（600s 收敛、零超调），但**真实加热器热特性不同，参数必须在阶段 5 实测后重新整定**。
 2. FAULT 的人工确认入口 `Control_AckFault()` 已留好，阶段 6 接按键。
-3. 阶段 4+5 未提交 Git：等你审核通过后提交。
+3. 阶段 4+5 已审核通过并提交：`117edb9`。
+
+---
+
+## 6. 阶段 6 记录：按键与菜单（2026-10-18）
+
+### 6.1 新增/修改
+| 文件 | 改动 | 说明 |
+|------|------|------|
+| `Hardware/key.c/h` | 新增 | 三键并行状态机：20ms 消抖、1s 长按、松手产生短按；`Key_GetEvent` 消费式读取，全程无 Delay |
+| `App/menu.c/h` | 新增 | 按键映射 + 参数步进 + Flash 保存 + OLED 四行整屏渲染（正常页/编辑页/消息提示） |
+| `App/control.c/h` | 重写 | **删除 STANDBY 2s 自动启动**；新增 `Control_Start/Stop/SetTarget/SetPid/ApplyParams/GetParams`，参数带范围校验与返回值（0 成功/1 越界/2 状态不允许） |
+| `Core/Src/main.c` | 重写 | 三档时间片：10ms（Key_Scan/Menu_Tick/Comm_Tick）、500ms（Control_Tick/Menu_Render）、1s（秒计数） |
+
+### 6.2 按键定义
+| 按键 | 短按 | 长按 |
+|------|------|------|
+| KEY1 (PB12) | RUN/STB 切换；FAULT 状态=故障确认 | — |
+| KEY2 (PB13) | 切换编辑项 TGT→KP→KI→KD→关闭 | 保存参数到 Flash |
+| KEY3 (PB14) | 当前项 +（TGT 0.5℃/KP 0.5/KI 0.01/KD 0.1） | 当前项 - |
+
+参数范围拦截：目标 0~70℃、Kp 0~50、Ki 0~5、Kd 0~20；越界显示 `xxx RANGE ERR` 且不生效。
+
+---
+
+## 7. 阶段 7 记录：Flash 参数存储（2026-10-18）
+
+### 7.1 容量核算与地址
+- C8T6 = 64KB Flash，页大小 1KB，共 64 页（0~63）
+- 末页：第 63 页，地址 **0x0800FC00**，1KB
+- 镜像 28 字节：magic(4) + version(2) + reserved(2) + target/kp/ki/kd(16) + CRC32(4)
+
+### 7.2 新增文件
+| 文件 | 说明 |
+|------|------|
+| `App/param_codec.c/h` | 镜像序列化/反序列化 + CRC-32/MPEG-2（纯 C，无 HAL，可宿主机测试） |
+| `App/flash_param.c/h` | 整页擦除 + 按字写入 + 回读校验；擦写全程 `__disable_irq()` 并保存/恢复 PRIMASK；`Param_Load` 校验失败自动回默认并置标志 |
+
+### 7.3 宿主机测试（`tests/test_param.c`，**21/21 通过**，实际运行）
+```
+=== TempCtrl param codec tests (host build) ===
+T1 [PASS] crc32("123456789")=0x0376E6E7 == 0x0376E6E7
+   [PASS] crc32(empty)=0xFFFFFFFF
+T2 [PASS] image size=28 / magic 31 4D 43 54 (TCM1 LE) / version=1
+   [PASS] target 45.0f bytes=00 00 34 42 / stored crc matches
+T3 [PASS] round trip: target=47.50 kp=12.25 ki=0.35 kd=3.75
+T4 [PASS] payload bitflip ret=2 / bad magic ret=1 / bad version ret=1 / blank flash ret=1
+T5 [PASS] min/max bounds round trip (70.0/50.0/5.00/20.0)
+=== ALL PASS: 0 check(s) failed ===
+```
+
+---
+
+## 8. 阶段 8 记录：USART1 + Python 上位机（2026-10-18）
+
+### 8.1 新增文件
+| 文件 | 说明 |
+|------|------|
+| `Core/usart.c/h` | USART1 115200 8N1；1 字节中断接收 + 128B 环形缓冲 + 溢出计数；阻塞发送单帧（≤3.5ms） |
+| `App/comm.c/h` | AA55 帧解析状态机（逐字节、可重同步）、CRC16-CCITT 校验、8 条命令分发、200ms 主动状态上报、NACK 错误码 |
+| `host/protocol.py` | 与固件一一对应的帧编解码/CRC/越界校验/解析器 |
+| `host/test_protocol.py` | 协议自动化测试（**46/46 通过**） |
+| `host/app_gui.py` | tkinter GUI：实时三曲线（温度/目标/占空比，双 Y 轴）、SIM/REAL 与 FAULT 徽标、启停/设温/改 PID/保存面板、日志区 |
+| `host/monitor_cli.py` | 无 GUI 终端监控 + `--demo` 无硬件链路演练 |
+
+### 8.2 协议自动化测试（实际运行，46/46）
+```
+T1 CRC16 已知向量 0x29B1 ✅
+T2 帧布局（总长 6+LEN、CRC 覆盖 cmd..payload）✅
+T3 整包/逐字节/7 字节切分三种投喂均解析 4 帧 ✅
+T4 坏 CRC、载荷翻 bit 均丢弃并计数 ✅
+T5 LEN=33 拦截、LEN=32 上限接受、客户端拒绝超长 ✅
+T6 噪声（伪帧头 AA 00 / AA A5）后成功重同步 ✅
+T7 状态帧 25B 解码；-999 哨兵解出 FLT/SENSOR ✅
+T8 越界校验：70.5/60/6.0/25.0/NaN 全部拒绝 ✅
+T9 2000 次随机字节流模糊测试：零异常 ✅
+T10 命令编码向量：START 6B / SET_TARGET 10B / SET_PID 18B ✅
+=== ALL PASS: 46/46 checks passed ===
+```
+
+### 8.3 无硬件链路演练（`python host/monitor_cli.py --demo`）
+合成状态帧 → 真实 `protocol.Parser` → 渲染，30 帧，注入 3 个坏帧全部被 CRC 检出：
+```
+[00:05:02] RUN T= 25.33C SET= 45.00C PWM=100% FAN=OFF SIM  FAULT=-  (rx=25B crc_err=0)
+=== demo done: 30 frames, crc_errors=3, junk=0 ===
+```
+
+### 8.4 Python GUI 状态（诚实说明）
+`py_compile` 语法校验通过；**本机 Python 运行时为嵌入式发行版，缺 tkinter，无法开窗运行**。GUI 依赖的协议/解析/越界逻辑已被 8.2 的 46 项测试全覆盖，窗口渲染需在装有标准 CPython 的机器上人工验证（测试报告 §4 第 11 项）。
+
+### 8.5 最终编译
+```
+Program Size: Code=17114 RO-data=2042 RW-data=56 ZI-data=3160
+"TempCtrl\TempCtrl.axf" - 0 Error(s), 0 Warning(s).
+```
+
+---
+
+## 9. 交付文档索引
+
+| 文档 | 内容 |
+|------|------|
+| `docs/ARCHITECTURE.md` | 分层架构图、时间片表、数据流、状态机、设计决策、资源占用 |
+| `docs/WIRING.md` | 引脚表、NTC 分压、MOSFET 驱动、共地要求、上电检查清单 |
+| `docs/PROTOCOL.md` | 帧格式、命令表、状态载荷、错误码、示例帧、上位机用法 |
+| `docs/TEST_REPORT.md` | 编译/单测/协议测试实测结果 + 12 项上板待测清单 + 记录模板 |
+| `docs/RESUME_AND_INTERVIEW.md` | 简历条目（完整/精简）、STAR 口述、20 个高频面试问答 |
+| `tests/` | `test_pid.c`、`test_param.c`、`run_tests.bat` 及实测日志 |
+| `host/` | `protocol.py`、`app_gui.py`、`monitor_cli.py`、`test_protocol.py` 及日志 |

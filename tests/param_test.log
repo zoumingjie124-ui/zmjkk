@@ -1,0 +1,28 @@
+=== TempCtrl param codec tests (host build) ===
+T1 CRC32 known vector:
+  [PASS] crc32("123456789")=0x0376E6E7 == 0x0376E6E7
+  [PASS] crc32(empty)=0xFFFFFFFF == 0xFFFFFFFF
+T2 image layout:
+  [PASS] image size=28 == 28
+  [PASS] magic bytes=31 4D 43 54 (TCM1 LE)
+  [PASS] version=1
+  [PASS] target 45.0f bytes=00 00 34 42
+  [PASS] stored crc=0xD39CD045 matches
+T3 round trip:
+  [PASS] deserialize ret=0 == 0
+  [PASS] magic=0x54434D31
+  [PASS] version=1
+  [PASS] target=47.50
+  [PASS] kp=12.25
+  [PASS] ki=0.35
+  [PASS] kd=3.75
+T4 corruption detection:
+  [PASS] payload bitflip ret=2 == 2 (crc)
+  [PASS] bad magic ret=1 == 1
+  [PASS] bad version ret=1 == 1
+  [PASS] blank flash ret=1 == 1
+T5 boundary values:
+  [PASS] min bounds round trip ok
+  [PASS] max bounds round trip ok
+  [PASS] max values preserved: 70.0 50.0 5.00 20.0
+=== ALL PASS: 0 check(s) failed ===

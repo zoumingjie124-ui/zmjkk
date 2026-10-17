@@ -419,6 +419,11 @@
               <FileType>1</FileType>
               <FilePath>../Core/Src/tim.c</FilePath>
             </File>
+            <File>
+              <FileName>usart.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Core/Src/usart.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -444,6 +449,11 @@
               <FileType>1</FileType>
               <FilePath>../Hardware/fan.c</FilePath>
             </File>
+            <File>
+              <FileName>key.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Hardware/key.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -458,6 +468,26 @@
               <FileName>control.c</FileName>
               <FileType>1</FileType>
               <FilePath>../App/Src/control.c</FilePath>
+            </File>
+            <File>
+              <FileName>menu.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../App/Src/menu.c</FilePath>
+            </File>
+            <File>
+              <FileName>param_codec.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../App/Src/param_codec.c</FilePath>
+            </File>
+            <File>
+              <FileName>flash_param.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../App/Src/flash_param.c</FilePath>
+            </File>
+            <File>
+              <FileName>comm.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../App/Src/comm.c</FilePath>
             </File>
           </Files>
         </Group>
