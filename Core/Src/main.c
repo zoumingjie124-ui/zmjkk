@@ -2,43 +2,38 @@
 /**
   ******************************************************************************
   * @file    main.c
-  * @brief   智能温控与故障监测终端 —— 程序入口（阶段 2+3：传感器 + 加热/风扇驱动）
+  * @brief   智能温控与故障监测终端 —— 程序入口
+  *           （阶段 4+5：PID 闭环 + 控制状态机 + 安全联锁）
   *
   * 初始化顺序：
   *   1. HAL_Init / SystemClock_Config   72MHz + ADC 时钟 12MHz
   *   2. MX_GPIO_Init                    加热器/风扇先写低再配输出
-  *   3. MX_TIM1_Init + Heater_Init      PWM 启动但占空比 0
-  *   4. Sensor_Init                     上电自检：有 NTC 走真实模式，否则走模拟
+  *   3. Control_Init                    状态机 + PID + TIM1 PWM + 风扇（全关）
+  *   4. Sensor_Init                     上电自检决定 SIM/REAL 模式
   *   5. OLED_Init                       显示
   *   6. while(1)                        非阻塞时间片调度
   *
   * 时间片：
-  *   500ms —— Sensor_Read + OLED 刷新（温度/加热功率/风扇/SIM-REAL）
+  *   500ms —— Control_Tick()（传感器读取 + 联锁检查 + PID + 风扇）+ OLED 刷新
   *   1000ms —— 运行秒数
   *
-  * 演示序列（DEMO）：无按键阶段的联调脚本，阶段 6 按键接管后删除。
-  *   警告：若 PA8 已接驱动电路，演示会真实输出 PWM！接入真实加热器前
-  *         只允许 LED 假负载。不需要演示时把 DEMO_ENABLE 改为 0。
+  * 本阶段目标温度默认 45.0℃（control.h: CTRL_TARGET_DEFAULT_C），用于观察
+  * 模拟/真实闭环收敛；阶段 6 由按键接管启停与设温。
   ******************************************************************************
   */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "adc.h"
 #include "tim.h"
 #include "gpio.h"
 #include "oled.h"
 #include "sensor.h"
-#include "heater.h"
-#include "fan.h"
-
-/* Private defines -----------------------------------------------------------*/
-#define DEMO_ENABLE   1     /* 联调演示序列开关：1=启用，0=加热/风扇全程关闭 */
+#include "control.h"
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-static void Display_SensorData(const Sensor_Data_t *d);
-static void Demo_Sequence(uint32_t uptime_s);
+static void Display_Snapshot(void);
+static void Display_Temp1(uint8_t line, uint8_t col, float temp_c);
 
 int main(void)
 {
@@ -46,11 +41,8 @@ int main(void)
   SystemClock_Config();
   MX_GPIO_Init();
 
-  MX_TIM1_Init();
-  Heater_Init();            /* PWM 已启动，占空比 0 */
-  Fan_Init();               /* 风扇关 */
-
-  Sensor_Init();            /* 上电自检决定 SIM/REAL，结果马上显示出来 */
+  Sensor_Init();            /* 先确定 SIM/REAL（含 ADC 自校准） */
+  Control_Init();           /* 状态机从 INIT 起步，加热/风扇默认全关 */
 
   OLED_Init();
   OLED_Clear();
@@ -63,102 +55,73 @@ int main(void)
   {
     uint32_t now = HAL_GetTick();
 
-    if ((now - last_500ms) >= 500u)          /* 传感器 + 显示时间片 */
+    if ((now - last_500ms) >= 500u)          /* 控制周期 = 500ms */
     {
       last_500ms += 500u;
-      Sensor_Data_t d = Sensor_Read();
-      Display_SensorData(&d);
+      Control_Tick();                        /* 联锁→PID→风扇，一个 tick 全做 */
+      Display_Snapshot();
     }
 
-    if ((now - last_1000ms) >= 1000u)        /* 秒计数 + 演示序列时间片 */
+    if ((now - last_1000ms) >= 1000u)        /* 秒计数时间片 */
     {
       last_1000ms += 1000u;
       uptime_s++;
-      OLED_ShowNum(4, 8, uptime_s, 5);
-#if DEMO_ENABLE
-      Demo_Sequence(uptime_s);
-#endif
+      OLED_ShowNum(4, 11, uptime_s, 5);
     }
   }
 }
 
 /**
-  * @brief OLED 刷新：第一行必须带 SIM/REAL 标识（约束 3）
-  *
-  * 布局（16 列 × 4 行）：
-  *   L1: "SIM  T:25.3C" / "REAL T:25.3C" / 无效时 "REAL T: ERR "
-  *   L2: "HEAT:030%"
-  *   L3: "FAN: ON " / "FAN: OFF"
-  *   L4: "UPTIME:00012"（秒数在 1s 时间片更新）
+  * @brief OLED 刷新（16 列 × 4 行）：
+  *   L1: "RUN  T:44.7C"   状态(INI/STB/RUN/FLT) + 当前温度
+  *   L2: "SET :45.0C"     目标温度
+  *   L3: "H:078% FAN:OFF" 加热占空比 + 风扇
+  *   L4: "SIM  UP:00123"  数据源标识 + 运行秒数
+  *   温度无效时 L1 显示 "T:  ERR"。SIM 标识永不隐藏（诚信约束）。
   */
-static void Display_SensorData(const Sensor_Data_t *d)
+static void Display_Snapshot(void)
 {
-  if (d->is_simulated)
+  const ctrl_snapshot_t *s = Control_Get();
+
+  OLED_ShowString(1, 1, Control_StateName());
+  OLED_ShowChar(1, 4, ' ');
+  if (s->temp_valid)
   {
-    OLED_ShowString(1, 1, "SIM  ");
+    Display_Temp1(1, 7, s->temp_c);
   }
   else
-  {
-    OLED_ShowString(1, 1, "REAL ");
-  }
-
-  if (!d->is_valid)
   {
     OLED_ShowString(1, 7, "T:  ERR   ");
   }
-  else
-  {
-    /* 一位小数显示：25.3 -> "25.3"；负温度超出本项目场景，直接显示 ERR */
-    int32_t t10 = (int32_t)(d->temperature_c * 10.0f + 0.5f);
-    if (t10 < 0 || t10 > 999)
-    {
-      OLED_ShowString(1, 7, "T:  ERR   ");
-    }
-    else
-    {
-      OLED_ShowString(1, 7, "T:");
-      OLED_ShowNum(1, 9,  (uint32_t)(t10 / 10), 2);
-      OLED_ShowChar(1, 11, '.');
-      OLED_ShowNum(1, 12, (uint32_t)(t10 % 10), 1);
-      OLED_ShowChar(1, 13, 'C');
-    }
-  }
 
-  OLED_ShowString(2, 1, "HEAT:");
-  OLED_ShowNum(2, 6, Heater_GetDuty(), 3);
-  OLED_ShowChar(2, 9, '%');
+  OLED_ShowString(2, 1, "SET :");
+  Display_Temp1(2, 6, s->target_c);
 
-  OLED_ShowString(3, 1, Fan_IsOn() ? "FAN: ON " : "FAN: OFF");
-  OLED_ShowString(4, 1, "UPTIME:");
+  OLED_ShowString(3, 1, "H:");
+  OLED_ShowNum(3, 3, s->duty, 3);
+  OLED_ShowString(3, 6, "% FAN:");
+  OLED_ShowString(3, 11, s->fan_on ? "ON " : "OFF");
+
+  OLED_ShowString(4, 1, s->is_simulated ? "SIM  " : "REAL ");
+  OLED_ShowString(4, 6, "UP:");
 }
 
 /**
-  * @brief 联调演示序列：验证 PWM 输出、风扇开关、模拟热响应
-  *         0-10s 全部关闭 | 10-40s 加热 30% | 40-70s 加热 50%+风扇
-  *         | 70s 起全部关闭保持
-  *        阶段 6 按键接管后删除本函数。
+  * @brief 温度一位小数显示（覆盖原位置 12 字符宽，避免残留旧字符）
+  * @note  负温度与超 99.9℃ 不在本项目显示范围，统一显示 ERR
   */
-static void Demo_Sequence(uint32_t uptime_s)
+static void Display_Temp1(uint8_t line, uint8_t col, float temp_c)
 {
-  if (uptime_s < 10u)
+  int32_t t10 = (int32_t)(temp_c * 10.0f + 0.5f);
+  if (t10 < 0 || t10 > 999)
   {
-    Heater_SetDuty(0);
-    Fan_Off();
+    OLED_ShowString(line, col, "    ERR   ");
+    return;
   }
-  else if (uptime_s < 40u)
-  {
-    Heater_SetDuty(30);
-  }
-  else if (uptime_s < 70u)
-  {
-    Heater_SetDuty(50);
-    Fan_On();
-  }
-  else
-  {
-    Heater_Off();
-    Fan_Off();
-  }
+  OLED_ShowNum(line, col,     (uint32_t)(t10 / 10), 2);
+  OLED_ShowChar(line, col + 2, '.');
+  OLED_ShowNum(line, col + 3, (uint32_t)(t10 % 10), 1);
+  OLED_ShowChar(line, col + 4, 'C');
 }
 
 /**

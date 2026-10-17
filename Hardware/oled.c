@@ -140,7 +140,7 @@ void OLED_ShowChar(uint8_t Line, uint8_t Column, char Char)
   * @param  Column 起始列位置，范围：1~16
   * @param  String 要显示的字符串，范围：ASCII可见字符
   */
-void OLED_ShowString(uint8_t Line, uint8_t Column, char *String)
+void OLED_ShowString(uint8_t Line, uint8_t Column, const char *String)
 {
 	uint8_t i;
 	for (i = 0; String[i] != '\0'; i++)

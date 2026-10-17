@@ -1,0 +1,28 @@
+=== TempCtrl PID unit tests (host build, tests real pid.c) ===
+T1 step response (25C -> 45C, 600s):
+  final T=44.99C u=50.0% err=0.01C maxT=44.99C
+  [PASS] converged: |err|=0.005C
+  [PASS] overshoot=-0.005C < 3.0C
+  [PASS] output always in [0,100]
+  [PASS] no input fault
+T2 output clamp:
+  [PASS] positive clamp u=100.0 == 100
+  [PASS] negative clamp u=0.0 == 0
+  [PASS] integral=0.000 within hard limits
+T3 anti-windup:
+  [PASS] saturated output u=100.0 == 100
+  [PASS] frozen integral=0.0000 == 0
+  [PASS] desaturated in 1 step u=0.0 == 0
+  [PASS] hard integral clamp=5.0000 == 5
+  [PASS] unsaturated output u=21.1
+T4 invalid input interception:
+  state before fault: integral=2.5000
+  [PASS] NaN measurement -> u=0.0 fault=1
+  [PASS] integral untouched=2.5000
+  [PASS] NaN setpoint -> u=0.0 fault=1
+  [PASS] overrange(999C) -> u=0.0 fault=1
+  [PASS] underrange(-100C) -> u=0.0 fault=1
+  [PASS] fault cleared after valid input, fault=0
+  [PASS] recovered output u=42.8 in [0,100]
+  [PASS] integral resumes normally=2.7500
+=== ALL PASS: 0 check(s) failed ===
