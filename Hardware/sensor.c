@@ -119,8 +119,7 @@ void Sensor_Init(void)
 {
   uint16_t raw;
 
-  MX_ADC1_Init();
-  HAL_ADCEx_Calibration_Start(&hadc1);   /* F1 上电自校准，提高绝对精度 */
+  MX_ADC1_Init();          /* ADC 自校准已在 adc.c 的 MX_ADC1_Init 末尾完成 */
 
   /* 上电自检：贴轨判定 NTC 是否接入 */
   raw = ntc_read_raw();

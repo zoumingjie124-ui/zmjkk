@@ -35,4 +35,11 @@ void MX_ADC1_Init(void)
   {
     Error_Handler();
   }
+
+  /* F1 的 ADC 没有出厂校准，上电后必须软件自校准一次（约 100us），
+     修正电容阵列偏差，否则绝对精度可能差十几个 LSB */
+  if (HAL_ADCEx_Calibration_Start(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
 }
