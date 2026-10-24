@@ -33,4 +33,22 @@ uint8_t Heater_OutputEnabled(void);
 
 void    Heater_Off(void);               /* 逻辑归零 + 关闸（安全入口） */
 
+/**
+  * @brief 致命异常专用的"最后关断"（裸寄存器实现，不调用 HAL、不依赖外设状态）
+  *
+  * 为什么必须单独一个函数：PA8 处于 AF 模式时，向 GPIOA->BRR 写 1 **不会**
+  * 改变引脚电平——引脚由 TIM1_CH1 驱动，GPIO 输出寄存器被旁路。
+  * 且 MOE=0 之后引脚状态还受 BDTR.OSSI / CR2.OIS1 影响（本工程未配置 OSSI，
+  * 不能假设一定为低）。
+  *
+  * 因此这里显式做三件事：
+  *   1. TIM1：MOE=0（关主输出）+ CEN=0（停计数）
+  *   2. PA8：由"复用推挽"切回"通用推挽输出"（GPIOA->CRH 单次读改写）
+  *   3. 驱动 PA8 为低，并顺带把 PB0 置高开风扇
+  *
+  * 调用约束：可在任意上下文调用（含 HardFault），内部自行开启 GPIOA/B 时钟。
+  * 若在 GPIO 初始化之前调用，引脚本就不是 AF 模式，外部 10k 下拉同样保证关断。
+  */
+void    Heater_PanicOff(void);
+
 #endif /* __HEATER_H */

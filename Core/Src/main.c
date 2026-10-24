@@ -37,6 +37,7 @@
 #include "flash_param.h"
 #include "param_codec.h"
 #include "iwdg.h"
+#include "heater.h"
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
@@ -160,11 +161,12 @@ void SystemClock_Config(void)
 void Error_Handler(void)
 {
   __disable_irq();
-  /* 异常兜底：无需苦等 1s 看门狗超时，进入死循环前微秒级切断 TIM1 主输出使能（MOE）
-     并拉低 PA8、拉高 PB0（开风扇），同时防止 MX_IWDG_Init 之前报错导致无看门狗带载停机 */
-  TIM1->BDTR &= ~TIM_BDTR_MOE;
-  GPIOA->BRR  = HEATER_Pin;
-  GPIOB->BSRR = FAN_Pin;
+  /* 与五个致命异常使用同一套关断序列（第三轮审查整改）：
+     - 只写 GPIOA->BRR 是无效的（PA8 仍处 AF 模式，由 TIM1 驱动），
+       必须先把引脚切回通用推挽输出再拉低 —— 细节见 Heater_PanicOff()
+     - 这里还覆盖了 MX_IWDG_Init 之前报错、看门狗尚未启动的情况
+     顺序：先关断负载，再停机等 IWDG 复位 */
+  Heater_PanicOff();
   while (1)
   {
   }

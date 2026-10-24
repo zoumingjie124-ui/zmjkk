@@ -73,3 +73,32 @@ void Heater_Off(void)
   s_hw_en = 0u;
   hw_apply();
 }
+
+/**
+  * @brief 致命异常的最后关断（裸寄存器，不依赖 HAL 与外设状态）
+  * @note  顺序不可调换：先关 MOE 再改引脚模式，避免切换瞬间输出高电平
+  */
+void Heater_PanicOff(void)
+{
+  /* 0) 确保 GPIO 时钟开启：若在 MX_GPIO_Init 之前出错调用，
+        不开启时钟的话后面写 CRH/BRR 会被硬件忽略 */
+  RCC->APB2ENR |= (RCC_APB2ENR_IOPAEN | RCC_APB2ENR_IOPBEN);
+
+  /* 1) 关 TIM1 主输出 + 停计数器（避免残余比较事件再次驱动输出） */
+  TIM1->BDTR &= ~TIM_BDTR_MOE;
+  TIM1->CR1  &= ~TIM_CR1_CEN;
+
+  /* 2) PA8：复用推挽 -> 通用推挽输出
+        GPIOA->CRH 的 bit[3:0] 是 PA8：MODE=10(输出2MHz) CNF=00(通用推挽)
+        单次读改写，避免中间出现"输入模式"的悬空窗口 */
+  GPIOA->CRH = (GPIOA->CRH & ~(0xFu << 0)) | (0x2u << 0);
+
+  /* 3) 驱动 PA8 为低电平（此时 GPIO 输出驱动器才真正接管引脚） */
+  GPIOA->BRR = HEATER_Pin;
+
+  /* 4) 风扇全开（PB0 若尚未配置为输出则无效果，属可接受降级） */
+  GPIOB->BSRR = FAN_Pin;
+
+  /* 5) 等写操作落地再进入死循环（由调用方 while(1) 等待 IWDG 复位） */
+  __DSB();
+}

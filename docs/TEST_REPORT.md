@@ -11,7 +11,7 @@
 | 宿主机 C 测试 | **50 项**（PID 20 + 参数编解码 30）全部 PASS |
 | Python 协议测试 | **46 项**全部 PASS（含 2000 次模糊） |
 | 合计 | **96 项** |
-| 固件编译 | 0 Error / 0 Warning，Code=17522B / RO=2042B / RW=48B / ZI=3168B |
+| 固件编译 | 0 Error / 0 Warning，Code=17554B / RO=2042B / RW=48B / ZI=3168B |
 
 > 历史数字说明：阶段 7 时参数测试为 21 项；第二轮安全审查补 8 项范围校验后为 30 项。
 
@@ -19,12 +19,13 @@
 
 | 数值 | 出现位置 | 来源 | 能否用当前工程复现 |
 |------|----------|------|--------------------|
-| **17522 B** | 本表、README、ARCHITECTURE、RESUME | 当前 HEAD 全量重编译（`MDK-ARM/rebuild.log`） | ✅ **能**，多次重编结果一致 |
+| **17554 B** | 本表、README、ARCHITECTURE、RESUME | 当前 HEAD 全量重编译（`MDK-ARM/rebuild.log`，含第三轮异常关断整改） | ✅ **能**，多次重编结果一致 |
+| 17522 B | 第三轮整改前的提交 `57d9b22` | 上一版基线（未含 `Heater_PanicOff`） | ❌ 代码已变更，仅供追溯 |
 | 17306 B | TEST_REPORT §7.1、SECURITY_REVIEW_2 §修复记录 | 第二轮安全审查时点（**尚未加入 IWDG**） | ❌ 不能——那是 IWDG 之前的代码状态 |
-| 17542 B | TEST_REPORT §8.4、SECURITY_REVIEW_2 §IWDG 记录 | IWDG 首版提交时留下的记录 | ❌ 不能——当前工程重编为 17522，差 20B |
+| 17542 B | TEST_REPORT §8.4、SECURITY_REVIEW_2 §IWDG 记录 | IWDG 首版提交时留下的记录 | ❌ 不能——无法复现，疑似当时编译选项不同 |
 
-**口径声明**：凡未标注"当时/历史"的编译尺寸，一律指 **当前 HEAD 的可复现结果 17522B**；
-17306B 与 17542B 仅作追溯，**不用于任何对外描述**。若你本地重编得到别的数值，请先核对：
+**口径声明**：凡未标注"当时/历史"的编译尺寸，一律指 **当前 HEAD 的可复现结果 17554B**；
+17306B / 17522B / 17542B 仅作追溯，**不用于任何对外描述**。若你本地重编得到别的数值，请先核对：
 ① 是否 `Rebuild`（全量）而非增量；② `.uvprojx` 的 Optimization 是否被改动；③ 是否多/少编了某个 .c。
 差 20B 这类量级通常来自优化等级或个别字符串，不影响功能，但**对外只认一个数**。
 > 凡本文与 `DEVELOPMENT_PLAN.md` 中标注"当时"的数字均为历史记录，**以本节为准**。
@@ -35,7 +36,7 @@
 
 | 类别 | 项目 | 性质 | 结果 |
 |------|------|------|------|
-| 编译 | 全工程 UV4 全量重编译 | 实际执行 | ✅ **0 Error / 0 Warning**（Code=17522B, RO=2042B, RW=48B, ZI=3168B，含看门狗） |
+| 编译 | 全工程 UV4 全量重编译 | 实际执行 | ✅ **0 Error / 0 Warning**（Code=17554B, RO=2042B, RW=48B, ZI=3168B，含看门狗与异常关断） |
 | 单元测试 | PID 逻辑 20 项 | 【模拟】宿主机执行 | ✅ 20/20 PASS |
 | 单元测试 | 参数 CRC/序列化/范围校验 30 项 | 【模拟】宿主机执行 | ✅ 30/30 PASS |
 | 协议测试 | 帧编解码 46 项（含 2000 次模糊） | 【模拟】宿主机执行 | ✅ 46/46 PASS |
@@ -52,7 +53,7 @@ cd MDK-ARM
 "D:/K5/UV4/UV4.exe" -r TempCtrl.uvprojx -t TempCtrl -o rebuild.log
 
 # 结果
-Program Size: Code=17522 RO-data=2042 RW-data=48 ZI-data=3168
+Program Size: Code=17554 RO-data=2042 RW-data=48 ZI-data=3168
 "TempCtrl\TempCtrl.axf" - 0 Error(s), 0 Warning(s).
 ```
 
@@ -165,7 +166,7 @@ Program Size: Code=17522 RO-data=2042 RW-data=48 ZI-data=3168
 
 | 项目 | 命令 | 结果 |
 |------|------|------|
-| 固件全量编译（当时） | `UV4.exe -r TempCtrl.uvprojx` | ✅ **0 Error / 0 Warning**，Code=17306B / RO=2042B / RW=48B / ZI=3160B（历史值，当前 17522B） |
+| 固件全量编译（当时） | `UV4.exe -r TempCtrl.uvprojx` | ✅ **0 Error / 0 Warning**，Code=17306B / RO=2042B / RW=48B / ZI=3160B（历史值，当前以 §0 为准） |
 | 宿主机 C 测试 | `tests\run_tests.bat` | ✅ **50 项全部 PASS**（PID 20 + 参数编解码 30，后者含新增 8 项范围校验） |
 | 协议测试 | `python host/test_protocol.py` | ✅ **46/46 PASS** |
 
@@ -226,7 +227,7 @@ LSI 标称 40kHz（规格 30~60kHz），预分频 64 -> 625Hz，重装 625 -> �
 
 ```
 UV4.exe -r TempCtrl.uvprojx
-Program Size: Code=17542  RO-data=2042  RW-data=48  ZI-data=3168   // 当时记录，当前实测 17522B
+Program Size: Code=17542  RO-data=2042  RW-data=48  ZI-data=3168   // 当时记录，当前以 §0 基线为准
 "TempCtrl\TempCtrl.axf" - 0 Error(s), 0 Warning(s).
 
 tests\run_tests.bat          -> HOST TESTS: ALL PASS（50 项）

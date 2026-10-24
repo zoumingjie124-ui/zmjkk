@@ -171,7 +171,7 @@ DWT->CTRL  |= DWT_CTRL_CYCCNTENA_Msk;
 
 | 失效形态 | 谁兜底 | 最坏加热时长 |
 |----------|--------|--------------|
-| HardFault / 硬件异常 | `HardFault_Handler` 里 `TIM1->BDTR &= ~MOE` + `GPIOA->BRR = HEATER_Pin` | **微秒级** |
+| NMI / HardFault / MemManage / BusFault / UsageFault（五个异常统一） | `fatal_stop()` → `Heater_PanicOff()`：MOE=0 + 停计数 + **PA8 切回 GPIO 推挽** + 拉低 + 开风扇 | **微秒级**（注意：仅写 BRR 无效，必须切模式） |
 | 主循环死循环、卡在 while(1)（未进异常） | IWDG：`64×625/LSI` = 0.67s（LSI 60kHz）~ **1.33s（LSI 30kHz）** | ≈1.33s |
 | 复位之后 | PA8 回到上电默认（浮空输入）+ 板上 10k 下拉 → 栅极 <0.1V → MOS 关断 | 0 |
 
@@ -179,6 +179,11 @@ DWT->CTRL  |= DWT_CTRL_CYCCNTENA_Msk;
 
 **实测方法**：① 暂在 `while(1)` 前加死循环（或用调试器暂停 CPU 不喂狗），示波器测 PA8 从停止喂狗到被拉低的时长；② 复位后立即测 PA8 应为 0V；③ 观察 OLED 第 4 行是否出现 `WDG` 标志（`IWDG_ResetWasWatchdog()`）。
 **判据**：≤ 1.5s 内复位；复位后 PA8 = 0；`WDG` 标志正确显示。
+
+**波形三点必须都抓**（对应评审要求）：
+1. 正常 PWM：1kHz、占空比与 OLED 显示一致；
+2. 故障处理瞬间：从触发异常/拔线到 PA8 下降沿的时间（预期 µs~ms 级，拔线场景 ≤0.7s）；
+3. 复位后：PA8 保持 0V，直到再次进入 RUNNING。
 
 ---
 

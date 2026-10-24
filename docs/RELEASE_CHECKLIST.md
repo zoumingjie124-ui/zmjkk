@@ -9,7 +9,7 @@
 
 | # | 检查项 | 状态 | 结论 |
 |---|--------|------|------|
-| 1 | 统一当前编译基线及历史数据（必须） | ✅ | 权威基线唯一化为 Code=17522B / 96 项；历史值全部标注 |
+| 1 | 统一当前编译基线及历史数据（必须） | ✅ | 权威基线唯一化为 Code=17554B / 96 项；历史值（17306/17522/17542）全部标注来源 |
 | 2 | 修正 NTC 理论灵敏度计算（必须） | ✅ | 0.06 → **0.022 ℃/LSB @25℃**，并给出全温区表 |
 | 3 | 统一"软件输出许可"与"硬件保护"术语（必须） | ✅ | 新增术语表，全库统一用词 |
 | 4 | 验证 NTC 断线后的实际关断延迟 | 🟡 | 静态分析 ≤0.65s；实测方法已写，**未上板** |
@@ -25,7 +25,7 @@
 
 | 项 | 值 |
 |----|-----|
-| 编译 | 0 Error / 0 Warning，Code=17522B / RO=2042B / RW=48B / ZI=3168B（Flash 29.9%、RAM 15.7%） |
+| 编译 | 0 Error / 0 Warning，Code=17554B / RO=2042B / RW=48B / ZI=3168B（Flash 30.0%、RAM 15.7%） |
 | 宿主机 C 测试 | 50 项（PID 20 + 参数编解码 30） |
 | Python 协议测试 | 46 项（含 2000 次模糊） |
 | 合计 | **96 项** |
@@ -35,7 +35,8 @@
 | 历史值 | 出现时点 | 处理 |
 |--------|----------|------|
 | Code=17306B | 第二轮安全审查时点 | TEST_REPORT §7.1、SECURITY_REVIEW_2、DEVELOPMENT_PLAN 均标"当时" |
-| Code=17542B | IWDG 首版记录 | TEST_REPORT §8.4、SECURITY_REVIEW_2 标"当时/当前 17522B" |
+| Code=17522B | 第三轮整改前（`57d9b22`） | TEST_REPORT §0.1 标为历史 |
+| Code=17542B | IWDG 首版记录 | TEST_REPORT §8.4、SECURITY_REVIEW_2 标"当时"，无法复现 |
 | 参数测试 21 项 | 阶段 7 | DEVELOPMENT_PLAN §7.3 标"当时"，并指向 §0 |
 | 测试总数 87 项 | 早期（20+21+46） | 已全部替换为 96 项 |
 
@@ -77,7 +78,11 @@ dV/dT = Vcc·Rf/(Rf+R)² · dR/dT ,  dR/dT = −B·R/T²
 
 ## 5. IWDG 复位与 PA8 关断 🟡
 
-静态分析（P1-9）：HardFault 内 `MOE=0` + 拉低 PA8（µs 级）；死循环靠 IWDG 0.67~1.33s 复位；复位后 PA8 浮空 + 10k 下拉 → MOS 关断。
+**第三轮整改**：原实现只写 `GPIOA->BRR` 而 PA8 仍在 AF 模式——该写操作对引脚无效（评审指出，成立）。
+现统一为 `Heater_PanicOff()`：MOE=0 → 停计数 → **PA8 切回通用推挽输出** → 拉低 → 开风扇 → `__DSB()`，
+并由 `NMI/HardFault/MemManage/BusFault/UsageFault` 五个异常与 `Error_Handler()` 共同调用（不再有遗漏路径）。
+
+静态分析（P1-9）：异常关断 µs 级；死循环靠 IWDG 0.67~1.33s 复位；复位后 PA8 浮空 + 10k 下拉 → MOS 关断。
 **已知残余风险**：IWDG 窗口内加热器仍按最后占空比输出（最多约 1.33s），彻底消除需独立温控开关（未安装，见 `WIRING.md` §0）。
 实测方法：制造死循环/暂停 CPU，示波器测复位时间与 PA8 电平，观察 `WDG` 标志。**尚未上板实测。**
 
@@ -85,7 +90,7 @@ dV/dT = Vcc·Rf/(Rf+R)² · dR/dT ,  dR/dT = −B·R/T²
 
 ```
 UV4.exe -r TempCtrl.uvprojx
-Program Size: Code=17522 RO-data=2042 RW-data=48 ZI-data=3168
+Program Size: Code=17554 RO-data=2042 RW-data=48 ZI-data=3168
 "TempCtrl\TempCtrl.axf" - 0 Error(s), 0 Warning(s).
 
 tests\run_tests.bat        -> PID 20/20 PASS, PARAM 30/30 PASS, HOST TESTS: ALL PASS
