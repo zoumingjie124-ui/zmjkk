@@ -171,7 +171,7 @@ DWT->CTRL  |= DWT_CTRL_CYCCNTENA_Msk;
 
 | 失效形态 | 谁兜底 | 最坏加热时长 |
 |----------|--------|--------------|
-| NMI / HardFault / MemManage / BusFault / UsageFault（五个异常统一） | `fatal_stop()` → `Heater_PanicOff()`：MOE=0 + 停计数 + **PA8 切回 GPIO 推挽** + 拉低 + 开风扇 | **微秒级**（注意：仅写 BRR 无效，必须切模式） |
+| NMI / HardFault / MemManage / BusFault / UsageFault（五个异常统一） | `fatal_stop()` → `Heater_PanicOff()`：MOE=0 + 停计数 + **PA8 切回 GPIO 推挽** + 拉低 + 开风扇 | **设计目标 µs 级（待示波器实测）**；注意仅写 BRR 无效，必须切模式 |
 | 主循环死循环、卡在 while(1)（未进异常） | IWDG：`64×625/LSI` = 0.67s（LSI 60kHz）~ **1.33s（LSI 30kHz）** | ≈1.33s |
 | 复位之后 | PA8 回到上电默认（浮空输入）+ 板上 10k 下拉 → 栅极 <0.1V → MOS 关断 | 0 |
 
