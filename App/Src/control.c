@@ -116,7 +116,7 @@ uint8_t Control_Start(void)
   d = Sensor_Read();
   if (!d.is_valid || d.temperature_c > CTRL_SAFE_LIMIT_C)
   {
-    Heater_Off();                 /* 逻辑清零 + 关硬件闸门 */
+    Heater_Off();                 /* 逻辑清零 + 关软件输出许可 */
     Fan_On();
     s_snap.state        = CTRL_FAULT;
     s_snap.fault        = (!d.is_valid) ? CTRL_FAULT_SENSOR : CTRL_FAULT_OVERTEMP;
@@ -139,7 +139,7 @@ uint8_t Control_Stop(void)
   {
     return 2u;
   }
-  Heater_Off();                   /* 逻辑 + 硬件闸门一起关 */
+  Heater_Off();                   /* 逻辑 + 软件输出许可一起关 */
   Fan_Off();
   s_snap.duty   = Heater_GetDuty();
   s_snap.fan_on = Fan_IsOn();
@@ -233,7 +233,7 @@ void Control_Tick(void)
         break;
       }
 
-      /* 硬件输出闸门（第二轮审查）：模拟数据绝不允许驱动真实 PA8。
+      /* 软件输出许可（闸门）（第二轮审查）：模拟数据绝不允许驱动真实 PA8。
          REAL 模式才会开闸；SIM 模式下 PID 仍计算，但占空比只落在逻辑变量里。 */
       Heater_EnableOutput(d.is_simulated ? 0u : 1u);
 

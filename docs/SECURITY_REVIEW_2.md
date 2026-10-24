@@ -12,7 +12,7 @@
 | 编号 | 文件 | 问题 | 严重度 |
 |------|------|------|--------|
 | P0-1 | `Hardware/sensor.c:118-137` | 上电自检失败**自动切换**模拟模式 | **致命** |
-| P0-2 | `Hardware/heater.c:29-38` | PWM 无硬件输出总闸，模拟模式照样驱动 PA8 | **致命** |
+| P0-2 | `Hardware/heater.c:29-38` | PWM 无软件输出许可（闸门），模拟模式照样驱动 PA8 | **致命** |
 | P0-3 | `App/Src/control.c` | RUNNING 不判 SIM；`Control_Start`/`AckFault` 不校验传感器 | **致命** |
 | P0-4 | `App/Src/comm.c` | 串口 START 入口可绕过安全检查（依赖 P0-3 修复） | 高（关联） |
 | P1-1 | `Hardware/sensor.c:84-89` | NTC 换算无合理性上下限 | 中 |
@@ -38,7 +38,7 @@
 
 ---
 
-## P0-2 加热器缺少硬件输出总闸（致命）
+## P0-2 加热器缺少软件输出许可（闸门）（致命）
 
 **代码**：`Heater_SetDuty()` 无条件 `__HAL_TIM_SET_COMPARE(... duty*10)`。
 
@@ -121,7 +121,7 @@
 | 文件 | 关键差异 |
 |------|----------|
 | `Hardware/sensor.h/.c` | 删除"自检失败 → 自动模拟"；改为编译期 `SENSOR_SIM_ENABLE`（默认 0）。删除可运行时改模式的 `Sensor_ForceSimulation()`（消除旁路）。NTC 换算增加 `[-40,150]℃` 合理性判定 |
-| `Hardware/heater.h/.c` | 新增逻辑占空比 / 硬件闸门双状态：`s_duty` + `s_hw_en`（默认 0）；`hw_apply()` 在闸门关时 CCR 恒 0；新增 `Heater_EnableOutput()` / `Heater_OutputEnabled()`；`Heater_Off()` = 清零 + 关闸 |
+| `Hardware/heater.h/.c` | 新增逻辑占空比 / 软件输出许可双状态：`s_duty` + `s_hw_en`（默认 0）；`hw_apply()` 在闸门关时 CCR 恒 0；新增 `Heater_EnableOutput()` / `Heater_OutputEnabled()`；`Heater_Off()` = 清零 + 关闸 |
 | `App/Inc/control.h`、`App/Src/control.c` | `Control_Start()` 先做**新鲜** `Sensor_Read()`，无效则进 FAULT 并返回 3；RUNNING 中 `Heater_EnableOutput(d.is_simulated ? 0 : 1)`；`Control_AckFault()` 改为返回 `uint8_t`，传感器仍无效则保持锁定返回 1 |
 | `App/Src/comm.c` | 新增 `ACK_FLASH_ERR=5`、`ACK_SENSOR_ERR=6` 与 `map_ctrl_status()`；START/STOP/ACK 全部按真实返回值回码 |
 | `App/Src/menu.c` | START 被拒显示 `START BLOCKED`；故障确认被拒显示 `SENSOR STILL ERR`（不再无条件显示 CLEARED） |
@@ -146,7 +146,7 @@
 ### 验证结果（实际执行）
 
 ```
-UV4 全量重编译：Code=17306 RO=2042 RW=48 ZI=3160 -> 0 Error(s), 0 Warning(s)
+UV4 全量重编译（当时）：Code=17306 RO=2042 RW=48 ZI=3160 -> 0 Error(s), 0 Warning(s)
 tests\run_tests.bat：50 项检查全部 PASS（PID 20 + 参数编解码 30）
 python host/test_protocol.py：46/46 PASS
 ```
@@ -201,7 +201,7 @@ python host/test_protocol.py：46/46 PASS
 ### 验证（实际执行）
 
 ```
-UV4 全量重编译：Code=17542 RO=2042 RW=48 ZI=3168 -> 0 Error(s), 0 Warning(s)
+UV4 全量重编译（当时，IWDG 首版）：Code=17542 RO=2042 RW=48 ZI=3168 -> 0 Error(s), 0 Warning(s)；当前基线 17522B
 tests\run_tests.bat：HOST TESTS: ALL PASS（50 项）
 ```
 

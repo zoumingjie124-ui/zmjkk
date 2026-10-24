@@ -57,7 +57,7 @@
 | 4 | PID 模块（纯 C 无 HAL 依赖）+ 离线单元测试 | 4 类用例全过 | 【模拟】 | ✅ 单测 20/20 通过（宿主机 MSVC） |
 | 5 | 控制状态机 + 闭环联锁 | 联锁动作正确；闭环收敛 | 编译【已执行】/ 闭环【真实硬件】 | 编译✅ 上板⏳待测试 |
 | 6 | 按键与菜单 | 启停/设温/改 PID/故障确认/保存 | 编译【已执行】/ 按键【真实硬件】 | 编译✅ 上板⏳待测试 |
-| 7 | Flash 参数保存 | 掉电保存、上电恢复、CRC 校验 | 单测【模拟】/ 持久化【真实硬件】 | 单测 21/21 ✅ 上板⏳待测试 |
+| 7 | Flash 参数保存 | 掉电保存、上电恢复、CRC 校验 | 单测【模拟】/ 持久化【真实硬件】 | 单测 30/30 ✅（阶段7 时 21 项，第二轮补 8 项范围校验） 上板⏳待测试 |
 | 8 | USART1 + Python 上位机 | 帧协议、定时上报、远程控制、GUI/CLI | 协议测试【模拟】/ 链路【真实硬件】 | 协议 46/46 ✅ 上板⏳待测试 |
 
 ---
@@ -280,7 +280,11 @@ T4 invalid input interception:
 | `App/param_codec.c/h` | 镜像序列化/反序列化 + CRC-32/MPEG-2（纯 C，无 HAL，可宿主机测试） |
 | `App/flash_param.c/h` | 整页擦除 + 按字写入 + 回读校验；擦写全程 `__disable_irq()` 并保存/恢复 PRIMASK；`Param_Load` 校验失败自动回默认并置标志 |
 
-### 7.3 宿主机测试（`tests/test_param.c`，**21/21 通过**，实际运行）
+### 7.3 宿主机测试（`tests/test_param.c`，**当时 21/21 通过**，实际运行）
+
+> 历史记录：本节数字是阶段 7 当时的结果。第二轮安全审查新增 T6 共 8 项范围校验用例，
+> **当前版本为 30/30**（见 `docs/TEST_REPORT.md` §1 与 §7.1，那里是最终基线）。
+
 ```
 === TempCtrl param codec tests (host build) ===
 T1 [PASS] crc32("123456789")=0x0376E6E7 == 0x0376E6E7
@@ -344,6 +348,7 @@ Program Size: Code=17114 RO-data=2042 RW-data=56 ZI-data=3160
 
 | 文档 | 内容 |
 |------|------|
+| `docs/RELEASE_CHECKLIST.md` | 7 项发布清单的执行状态与证据（2026-10-24） |
 | `docs/ARCHITECTURE.md` | 分层架构图、时间片表、数据流、状态机、设计决策、资源占用 |
 | `docs/WIRING.md` | 引脚表、NTC 分压、MOSFET 驱动、共地要求、上电检查清单 |
 | `docs/PROTOCOL.md` | 帧格式、命令表、状态载荷、错误码、示例帧、上位机用法 |
@@ -361,12 +366,12 @@ Program Size: Code=17114 RO-data=2042 RW-data=56 ZI-data=3160
 | 问题 | 修复 |
 |------|------|
 | P0：无 NTC 时自动切模拟，PID 用假温度驱动真实 PA8 | 删除自动切换；模拟改为编译期 `SENSOR_SIM_ENABLE`（默认 0）；删除 `Sensor_ForceSimulation` |
-| P0：加热器无硬件输出闸门 | `Heater_EnableOutput()` 默认关；闸门关时 CCR 恒 0；`Heater_Off()` = 清零 + 关闸 |
+| P0：加热器无软件输出许可（闸门） | `Heater_EnableOutput()` 默认关；闸门关时 CCR 恒 0；`Heater_Off()` = 清零 + 关闸 |
 | P0：START / ACK 不校验传感器 | `Control_Start()` 做新鲜读数校验（返回 3=传感器无效）；`Control_AckFault()` 复核并返回状态 |
 | P1：NTC 换算无合理性界 | 超出 [-40,150]℃ 判 invalid |
 | P1：Flash 只校验 CRC | 增加 `Param_ValidateRanges()`，Load 时校验失败回默认 |
 | P1：保存失败误报越界 | 新增 ACK 码 5（Flash）/ 6（传感器） |
 | P1：时间片补执行导致 PID 连算 | 三档时间片改 `last = now` |
 
-复测（实际执行）：编译 0E0W（Code=17306B）、宿主机 C 测试 50 项全过、协议测试 46 项全过。
+复测（当时记录）：编译 0E0W（Code=17306B，当前基线 17522B）、宿主机 C 测试 50 项全过、协议测试 46 项全过。
 未执行：全部上板验证（见 SECURITY_REVIEW_2.md「仍未验证」）。**本轮未提交 Git，等审核。**

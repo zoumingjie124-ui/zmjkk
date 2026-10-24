@@ -9,7 +9,7 @@
 
 | 项目 | 状态 |
 |------|------|
-| 全工程 Keil 编译 | ✅ **实际编译通过：0 Error / 0 Warning**（Code 17542B / RO 2042B / RW 48B / ZI 3168B，含 IWDG） |
+| 全工程 Keil 编译 | ✅ **实际编译通过：0 Error / 0 Warning**（Code 17522B / RO 2042B / RW 48B / ZI 3168B，含 IWDG） |
 | 宿主机单元测试（PID 20 + 参数编解码 30 + 协议 46） | ✅ **实际运行，96/96 通过**（含 2000 次协议模糊测试与连续 0xAA 重同步测试） |
 | 无硬件数据链路演练（合成帧 → 解析 → 渲染） | ✅ 实际运行，30 帧 / 3 个坏帧被正确丢弃 |
 | Python GUI 窗口运行 | ⚠️ **未运行**：本机 Python 缺 tkinter；已通过语法校验，协议与越界拦截逻辑已被测试覆盖 |
@@ -79,11 +79,13 @@ TempCtrl/
 
 | 文档 | 内容 |
 |------|------|
+| `docs/RELEASE_CHECKLIST.md` | **7 项发布清单状态**：基线统一 / NTC 灵敏度 / 术语 / 断线延迟 / IWDG / 编译测试 / GUI 闭环（含证据与阻塞项） |
+| `docs/PREBOARD_TEST_PLAN.md` | **上板前必测 7 项**：控制周期 / OLED 耗时 / UART 丢包 / NTC 噪声 / PID 整定 / GUI 启动 / 故障恢复路径（含判据与记录模板） |
 | `docs/ARCHITECTURE.md` | 分层架构图、时间片表、控制数据流、状态机、设计决策、资源占用 |
-| `docs/WIRING.md` | 引脚表、NTC 分压接线、MOSFET 选型原则、共地要求、上电检查清单 |
-| `docs/PROTOCOL.md` | 帧格式、命令表、状态载荷、错误码、实测示例帧、上位机用法 |
-| `docs/TEST_REPORT.md` | 编译/单测/协议实测结果 + 上板待测清单 + 记录模板 |
-| `docs/RESUME_AND_INTERVIEW.md` | 简历条目（完整/精简）、STAR 口述、20 个高频面试问答 |
+| `docs/WIRING.md` | 引脚表、**待回填的元件参数表**、NTC 分压、MOSFET 选型原则、共地要求、上电检查清单 |
+| `docs/PROTOCOL.md` | 帧格式、命令表、状态载荷、错误码（含 5/6）、实测示例帧、上位机用法 |
+| `docs/TEST_REPORT.md` | §0 当前测试基线（96 项）+ 编译/单测实测 + 上板待测清单 + 记录模板 |
+| `docs/RESUME_AND_INTERVIEW.md` | 简历条目（含**验证边界**说明）、STAR 口述、20 个高频面试问答 |
 | `docs/DEVELOPMENT_PLAN.md` | 八个阶段的开发记录、验收标准与遗留问题 |
 | `docs/SECURITY_REVIEW_2.md` | 第二轮 + 第三轮（IWDG）安全审查与修复记录 |
 
@@ -91,8 +93,8 @@ TempCtrl/
 
 ## 6. 安全设计要点
 
-1. **上电默认关闭**：栅极 10k 下拉（复位期间浮空也关断）+ 固件"先写低再配输出" + TIM1 CCR=0 + 硬件输出闸门默认关闭。
-2. **模拟数据不能驱动真实负载**：`SENSOR_SIM_ENABLE` 是编译期开关（默认 0）；即使开启，控制层也会关闭加热器硬件闸门（`Heater_EnableOutput(0)`），PA8 恒低。
+1. **上电默认关闭**：栅极 10k 下拉（复位期间浮空也关断）+ 固件"先写低再配输出" + TIM1 CCR=0 + **软件输出许可**（`Heater_EnableOutput`）默认关闭。
+2. **模拟数据不能驱动真实负载**：`SENSOR_SIM_ENABLE` 是编译期开关（默认 0）；即使开启，控制层也会关闭加热器的**软件输出许可**（`Heater_EnableOutput(0)`），PA8 恒低。
 3. **软件联锁**：传感器无效 / 温度 >75℃ / PID 输入异常 → 立即关加热、开风扇、锁定 FAULT，仅人工确认可解除；确认时还会复核传感器与当前温度，仍无效或仍超温则保持锁定。
 4. **入口无旁路**：按键与串口 START 都经过 `Control_Start()` 的新鲜读数与超温校验。
 5. **独立看门狗（IWDG）+ 异常微秒级硬关断**：`HardFault`/`Error_Handler` 内立即清零 `TIM1->BDTR` 的 `MOE` 位切断 PWM；主循环由 LSI 独立时钟驱动的 IWDG（~1.0s 超时）守护，CPU 任意位置死机即触发硬件复位（PA8 回到高阻+10k 下拉关断），重启后读取 `RCC_CSR` 在 OLED 第 4 行显示 `WDG` 告警。
