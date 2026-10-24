@@ -5,6 +5,7 @@
   ******************************************************************************
   */
 #include "menu.h"
+#include "iwdg.h"
 #include "key.h"
 #include "control.h"
 #include "oled.h"
@@ -27,7 +28,16 @@ static uint8_t s_msg_ttl;      /* 单位：500ms 渲染次数 */
 
 static void msg_set(const char *m)
 {
-  strncpy(s_msg, m, 16);
+  uint8_t i = 0u;
+  while (i < 16u && m[i] != '\0')
+  {
+    s_msg[i] = m[i];
+    i++;
+  }
+  while (i < 16u)
+  {
+    s_msg[i++] = ' ';          /* 补齐 16 列空格，避免覆盖不全残留 ":00015WDG" */
+  }
   s_msg[16] = '\0';
   s_msg_ttl = 4u;              /* 显示约 2s */
 }
@@ -96,8 +106,15 @@ void Menu_Tick(void)
   {
     if (s->state == CTRL_FAULT)
     {
-      Control_AckFault();
-      msg_set("FAULT CLEARED");
+      /* 传感器仍无效时确认会被拒绝，必须给用户明确反馈 */
+      if (Control_AckFault() == 0u)
+      {
+        msg_set("FAULT CLEARED");
+      }
+      else
+      {
+        msg_set("SENSOR STILL ERR");
+      }
     }
     else if (s->state == CTRL_RUNNING)
     {
@@ -106,8 +123,14 @@ void Menu_Tick(void)
     }
     else if (s->state == CTRL_STANDBY)
     {
-      (void)Control_Start();
-      msg_set("STARTED");
+      if (Control_Start() == 0u)
+      {
+        msg_set("STARTED");
+      }
+      else
+      {
+        msg_set("START BLOCKED");
+      }
     }
     else
     {
@@ -217,14 +240,13 @@ void Menu_Render(uint32_t uptime_s)
   OLED_ShowString(2, 1, "SET:");
   draw_temp1(2, 5, p->target_c);
 
-  /* ---- L3：正常页 = 占空比/风扇；编辑页 = 编辑项与数值 ---- */
+  /* ---- L3：正常页 = 占空比/风扇；编辑页 = 编辑项与数值（严格覆盖 14 列，无残留） ---- */
   if (s_edit == EDIT_OFF)
   {
     OLED_ShowString(3, 1, "H:");
     OLED_ShowNum(3, 3, s->duty, 3);
-    OLED_ShowChar(3, 6, '%');
-    OLED_ShowString(3, 8, "F:");
-    OLED_ShowString(3, 10, s->fan_on ? "ON " : "OFF");
+    OLED_ShowString(3, 6, "% F:");
+    OLED_ShowString(3, 10, s->fan_on ? "ON   " : "OFF  ");
   }
   else
   {
@@ -249,19 +271,22 @@ void Menu_Render(uint32_t uptime_s)
     }
   }
 
-  /* ---- L4：SIM/REAL + 秒数；有消息时优先显示消息 ---- */
+  /* ---- L4：SIM/REAL + 秒数 + WDG 标记；有消息时优先显示消息（均补齐 16 列） ---- */
   if (s_msg_ttl > 0u)
   {
     OLED_ShowString(4, 1, s_msg);
   }
   else if (s_edit != EDIT_OFF)
   {
-    OLED_ShowString(4, 1, "K2:NXT K3:+-");
+    OLED_ShowString(4, 1, "K2:NXT K3:+-    ");
   }
   else
   {
     OLED_ShowString(4, 1, s->is_simulated ? "SIM  " : "REAL ");
     OLED_ShowString(4, 6, "UP:");
     OLED_ShowNum(4, 9, uptime_s, 5);
+    /* 右下角：本次启动若由看门狗复位，常驻 "WDG" 标记。
+       看门狗复位会清零运行时间，不打标记的话用户只会觉得"怎么自己重启了" */
+    OLED_ShowString(4, 14, (IWDG_ResetWasWatchdog() != 0u) ? "WDG" : "   ");
   }
 }

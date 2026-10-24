@@ -10,9 +10,9 @@
 
 | 类别 | 项目 | 性质 | 结果 |
 |------|------|------|------|
-| 编译 | 全工程 UV4 全量重编译 | 实际执行 | ✅ **0 Error / 0 Warning**（Code=17114B, RO=2042B, RW=56B, ZI=3160B） |
+| 编译 | 全工程 UV4 全量重编译 | 实际执行 | ✅ **0 Error / 0 Warning**（Code=17542B, RO=2042B, RW=48B, ZI=3168B，含看门狗） |
 | 单元测试 | PID 逻辑 20 项 | 【模拟】宿主机执行 | ✅ 20/20 PASS |
-| 单元测试 | 参数 CRC/序列化 21 项 | 【模拟】宿主机执行 | ✅ 21/21 PASS |
+| 单元测试 | 参数 CRC/序列化/范围校验 30 项 | 【模拟】宿主机执行 | ✅ 30/30 PASS |
 | 协议测试 | 帧编解码 46 项（含 2000 次模糊） | 【模拟】宿主机执行 | ✅ 46/46 PASS |
 | 链路演练 | 合成状态帧 → Parser → 渲染（30 帧） | 【模拟】宿主机执行 | ✅ 通过（含 3 个注入坏帧被正确丢弃） |
 | 上板功能 | OLED/传感器/驱动/闭环/按键/Flash/串口 | 【真实硬件】 | ⏳ **全部待测试** |
@@ -27,7 +27,7 @@ cd MDK-ARM
 "D:/K5/UV4/UV4.exe" -r TempCtrl.uvprojx -t TempCtrl -o rebuild.log
 
 # 结果
-Program Size: Code=17114 RO-data=2042 RW-data=56 ZI-data=3160
+Program Size: Code=17542 RO-data=2042 RW-data=48 ZI-data=3168
 "TempCtrl\TempCtrl.axf" - 0 Error(s), 0 Warning(s).
 ```
 
@@ -46,7 +46,7 @@ Program Size: Code=17114 RO-data=2042 RW-data=56 ZI-data=3160
 | T3 积分抗饱和 | 饱和期积分冻结；反向误差 1 步退饱和；积分硬限幅生效 | 积分 0.0000→ 反向 1 步 u=0；硬限幅 5.0000 ✅ |
 | T4 异常输入 | NaN/越界返回 0、置故障、状态不被污染 | 4 种异常全拦截，积分保持 2.5000，恢复后正常续算 2.7500 ✅ |
 
-### 3.2 参数编解码（`tests/test_param.c`，21 项全过）
+### 3.2 参数编解码与范围校验（`tests/test_param.c`，30 项全过）
 
 | 用例 | 结果 |
 |------|------|
@@ -55,6 +55,7 @@ Program Size: Code=17114 RO-data=2042 RW-data=56 ZI-data=3160
 | 往返一致 | target/kp/ki/kd 位级一致 ✅ |
 | 损坏检测 | 载荷翻 bit → CRC 不符(2)；magic 破坏(1)；版本破坏(1)；空白 Flash 全 FF(1) ✅ |
 | 边界值 | 0/0/0/0 与 70/50/5/20 均可正确往返 ✅ |
+| 范围与异常值校验 | 默认值/上界通过，70.1/-0.1/50.1/5.01/20.1/NaN/Inf 全部拦截（9 项）✅ |
 
 ### 3.3 协议编解码（`host/test_protocol.py`，46 项全过）
 
@@ -91,8 +92,8 @@ Program Size: Code=17114 RO-data=2042 RW-data=56 ZI-data=3160
 
 | # | 项目 | 步骤 | 判据 | 状态 |
 |---|------|------|------|------|
-| 1 | 上电安全 | 只接 MCU+OLED，上电 | PA8/PB0 均为 0V；OLED 显示 `STB` | ⏳ |
-| 2 | SIM 闭环 | 不接 NTC，KEY1 启动 | `SIM` 标识、温度上升并收敛 45±0.5℃、PWM 回落到 ~50% | ⏳ |
+| 1 | 上电安全 | 接 MCU+OLED+NTC（或 10k 分压），上电 | PA8/PB0 均为 0V；OLED 显示 `STB` | ⏳ |
+| 2 | SIM 闭环 | 以 `SENSOR_SIM_ENABLE=1` 编译上电，KEY1 启动 | `SIM` 标识、温度收敛 45±0.5℃、逻辑 PWM 回落 ~50% 且 PA8 实测恒为 0V | ⏳ |
 | 3 | 驱动波形 | 示波器测 PA8（LED 假负载） | 1kHz，占空比随显示一致 | ⏳ |
 | 4 | 风扇迟滞 | 闭环中人为抬高目标 | T>target+2 开风扇，回落 +0.5 内关 | ⏳ |
 | 5 | 传感器失效 | REAL 模式拔 NTC | 立即 `FLT`、PWM=0、风扇 ON、不自动恢复 | ⏳ |
@@ -128,3 +129,92 @@ Program Size: Code=17114 RO-data=2042 RW-data=56 ZI-data=3160
 3. 模拟模型为单容一阶惯性，未建模环境扰动与热辐射非线性。
 4. Flash 写入寿命约 10k 次，当前仅在用户显式保存时写，正常使用无风险。
 5. 通信无重传机制（上位机侧建议 300ms 超时重发，见 PROTOCOL.md §1）。
+
+---
+
+## 7. 第二轮安全审查复测（2026-10-18）
+
+审查详情见 `docs/SECURITY_REVIEW_2.md`。本节只记录**复测结果**，严格区分三类结论。
+
+### 7.1 实际执行结果
+
+| 项目 | 命令 | 结果 |
+|------|------|------|
+| 固件全量编译 | `UV4.exe -r TempCtrl.uvprojx` | ✅ **0 Error / 0 Warning**，Code=17306B / RO=2042B / RW=48B / ZI=3160B |
+| 宿主机 C 测试 | `tests\run_tests.bat` | ✅ **50 项全部 PASS**（PID 20 + 参数编解码 30，后者含新增 8 项范围校验） |
+| 协议测试 | `python host/test_protocol.py` | ✅ **46/46 PASS** |
+
+### 7.2 静态审查结论（未执行、由代码结构保证）
+
+| 结论 | 依据 |
+|------|------|
+| 模拟模式下 PA8 不会输出 | `SENSOR_SIM_ENABLE=1` 时 `Control_Tick` 必调 `Heater_EnableOutput(0)`；`hw_apply()` 在闸门关时写 CCR=0；`Heater_Off()` 亦关闸 |
+| 无 NTC 上电必进 FAULT | `Sensor_Read` 无模拟回退，贴轨/超范围一律 `is_valid=0`；`Control_Tick` INIT 分支经 `safety_interlock` 直接进 FAULT |
+| START 无旁路 | 按键与串口都调用 `Control_Start()`，其中执行新鲜 `Sensor_Read()` 校验 |
+| PID 不会连算 | 时间片改 `last=now`，无补执行路径 |
+
+### 7.3 待上板验证（本轮仍为"待测试"）
+
+| # | 项目 | 方法 |
+|---|------|------|
+| 1 | SIM 构建下 PA8 恒低 | `SENSOR_SIM_ENABLE=1` 编译，启动闭环，万用表/示波器测 PA8 始终 0V |
+| 2 | 无 NTC 上电 | 断开 PA0 分压，上电 → OLED 应显 `FLT`，PA8 0V，风扇 ON |
+| 3 | 运行中拔线 | REAL 模式闭环中拔 NTC → 立即 `FLT` + 加热关断 |
+| 4 | START 被拒提示 | 无传感器时按 KEY1 → `START BLOCKED`；串口 START → ACK 码 6 |
+| 5 | 故障无法确认 | 无传感器时按 KEY1 确认 → `SENSOR STILL ERR`，仍 `FLT` |
+| 6 | Flash 保存失败 | 人为制造写失败（较难），验证 ACK 码 5 |
+
+---
+
+## 8. 第三轮修复：独立看门狗（2026-10-18）
+
+### 8.1 为什么补这一项
+
+第二轮把"模拟数据驱动真实加热器"定为 P0，但漏了另一条同等危险的链路：
+
+```
+HardFault / Error_Handler 死循环 / 任意 while 卡住
+  -> CPU 停住，TIM1 是独立外设，仍按最后 CCR 输出 PWM
+  -> PA8 保持占空比，加热器持续加热
+  -> 软件超温联锁永远不会再执行
+```
+
+软件输出闸门 `s_hw_en` 只是内存变量，CPU 挂了没人去关它。原方案把兜底寄托在
+"常闭温度开关"（硬件，尚未安装）。IWDG 是软件侧唯一不依赖 CPU 的后路。
+
+### 8.2 改动
+
+| 文件 | 内容 |
+|------|------|
+| `Core/Inc/iwdg.h`、`Core/Src/iwdg.c` | 新增。`MX_IWDG_Init()` / `IWDG_Feed()` / `IWDG_ResetWasWatchdog()`；上电读并清 `RCC_CSR` 复位标志 |
+| `Core/Src/main.c` | 所有初始化完成后才 `MX_IWDG_Init()`；主循环每轮开头 `IWDG_Feed()`；顺带修正文件头里"自检决定 SIM/REAL"的过时描述 |
+| `App/Src/menu.c` | OLED 第 4 行右上角显示 `WDG`（本次启动由看门狗复位时） |
+| `MDK-ARM/TempCtrl.uvprojx` | 加入 `iwdg.c` 与 `stm32f1xx_hal_iwdg.c`（原工程未引用 HAL 的 IWDG 驱动，首次编译会报 `L6218E: Undefined symbol HAL_IWDG_Init`） |
+
+### 8.3 超时参数怎么定的
+
+LSI 标称 40kHz（规格 30~60kHz），预分频 64 -> 625Hz，重装 625 -> 标称 **1.0s**（实际 0.67~1.33s）。
+主循环最长单次阻塞是 `Usart_Send` 的 100ms（HAL 超时）＋Flash 擦写约 40ms＋OLED 整屏刷新，
+合计最坏约 250ms，对 0.67s 的下限仍有 2.7 倍余量。
+
+### 8.4 验证（实际执行）
+
+```
+UV4.exe -r TempCtrl.uvprojx
+Program Size: Code=17542  RO-data=2042  RW-data=48  ZI-data=3168
+"TempCtrl\TempCtrl.axf" - 0 Error(s), 0 Warning(s).
+
+tests\run_tests.bat          -> HOST TESTS: ALL PASS（50 项）
+```
+
+链接期确认（map 文件）：`main -> MX_IWDG_Init / IWDG_Feed -> HAL_IWDG_Init / HAL_IWDG_Refresh`，
+`menu.o(Menu_Render) -> IWDG_ResetWasWatchdog`，符号均在镜像内（56 / 6 / 94 / 12 字节）。
+
+### 8.5 仍未验证（必须上板）
+
+| 项 | 说明 |
+|----|------|
+| 1s 超时是否误复位 | 实际 LSI 频率未知；若主循环某处超过 0.67s 会被复位 |
+| 真的卡死后能否复位 | 需在调试器里人为死循环（或长按不喂狗）验证 |
+| 复位后 PA8 是否确实为低 | 需示波器/万用表测；依赖板上 10k 下拉是否实装 |
+| `WDG` 标记是否正确显示 | 需实机触发一次看门狗复位后观察 OLED |

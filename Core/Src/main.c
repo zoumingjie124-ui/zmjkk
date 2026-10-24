@@ -8,11 +8,13 @@
   * 初始化顺序：
   *   1. HAL_Init / SystemClock_Config   72MHz + ADC 时钟 12MHz
   *   2. MX_GPIO_Init                    加热器/风扇先写低再配输出
-  *   3. Sensor_Init                     上电自检决定 SIM/REAL（含 ADC 自校准）
+  *   3. Sensor_Init                     上电自检决定 is_valid（含 ADC 自校准）；
+  *                                      SIM 模式已改为编译期开关 SENSOR_SIM_ENABLE
   *   4. MX_TIM1_Init + Control_Init      状态机从 INIT 起步，加热/风扇全关
   *   5. Param_Load                      读 Flash 末页，校验失败回默认
   *   6. Menu_Init / USART1 / Comm_Init   按键与通信
-  *   7. while(1)                        三档非阻塞时间片
+  *   7. MX_IWDG_Init                    看门狗（必须在所有初始化之后启动）
+  *   8. while(1)                        三档非阻塞时间片，每轮开头喂狗
   *
   * 时间片：
   *   10ms  —— Key_Scan + Menu_Tick + Comm_Tick（按键/协议解析，全部非阻塞）
@@ -34,6 +36,7 @@
 #include "usart.h"
 #include "flash_param.h"
 #include "param_codec.h"
+#include "iwdg.h"
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
@@ -49,7 +52,7 @@ int main(void)
   SystemClock_Config();
   MX_GPIO_Init();
 
-  Sensor_Init();            /* 传感器自检：决定 SIM / REAL */
+  Sensor_Init();            /* 传感器自检：决定 is_valid（SIM 由编译期开关决定） */
   MX_TIM1_Init();           /* TIM1 PWM 必须在 Heater_Init 之前 */
   Control_Init();           /* INIT 状态，加热 0%、风扇关 */
 
@@ -78,13 +81,24 @@ int main(void)
   last_500ms  = last_10ms;
   last_1000ms = last_10ms;
 
+  /* 看门狗最后启动：前面所有初始化都已完成，不会把慢速初始化误判成死机。
+     一旦启动无法关闭，复位后 PA8 回到浮空输入（板上 10k 下拉），加热器关断。 */
+  MX_IWDG_Init();
+
   while (1)
   {
     uint32_t now = HAL_GetTick();
 
+    /* 喂狗放在分支之前：只要主循环还在转就一定喂到；
+       卡在 Key_Scan / Comm_Tick / Control_Tick / Menu_Render 任一处都会停止喂狗 */
+    IWDG_Feed();
+
     if ((now - last_10ms) >= 10u)          /* 按键 + 通信时间片 */
     {
-      last_10ms += 10u;
+      /* 用 "= now" 而不是 "+="：丢弃错过的时间片，绝不补执行。
+         否则一次长阻塞（UART 阻塞发送、Flash 擦写）会让下一个循环连续
+         触发多次 Control_Tick，而 PID 内部仍按 Ts=0.5s 计算 -> 等效增益放大 */
+      last_10ms = now;
       Key_Scan();
       Menu_Tick();
       Comm_Tick();
@@ -92,14 +106,14 @@ int main(void)
 
     if ((now - last_500ms) >= 500u)        /* 控制 + 显示时间片 */
     {
-      last_500ms += 500u;
+      last_500ms = now;
       Control_Tick();
       Menu_Render(uptime_s);
     }
 
     if ((now - last_1000ms) >= 1000u)      /* 秒计数 */
     {
-      last_1000ms += 1000u;
+      last_1000ms = now;
       uptime_s++;
     }
   }
@@ -146,6 +160,11 @@ void SystemClock_Config(void)
 void Error_Handler(void)
 {
   __disable_irq();
+  /* 异常兜底：无需苦等 1s 看门狗超时，进入死循环前微秒级切断 TIM1 主输出使能（MOE）
+     并拉低 PA8、拉高 PB0（开风扇），同时防止 MX_IWDG_Init 之前报错导致无看门狗带载停机 */
+  TIM1->BDTR &= ~TIM_BDTR_MOE;
+  GPIOA->BRR  = HEATER_Pin;
+  GPIOB->BSRR = FAN_Pin;
   while (1)
   {
   }

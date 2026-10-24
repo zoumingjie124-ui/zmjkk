@@ -48,4 +48,8 @@ uint32_t Param_Serialize(const app_param_t *p, uint8_t *buf);
 /* 0 = 校验通过；1 = magic/version 不符；2 = CRC 不符 */
 uint8_t  Param_Deserialize(const uint8_t *buf, app_param_t *p);
 
+/* 数值合理性校验（第二轮审查新增）：0 = 通过；1 = 越界或非有限数值。
+   范围镜像 control.h 的 CTRL_* 宏，本模块保持"零依赖"故不直接包含它。 */
+uint8_t  Param_ValidateRanges(const app_param_t *p);
+
 #endif /* __PARAM_CODEC_H */

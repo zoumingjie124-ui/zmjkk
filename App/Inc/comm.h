@@ -17,7 +17,7 @@
   *   0x06 SET_PID     payload: f32 x3     -> 0x86 ACK
   *   0x07 SAVE_PARAMS                      -> 0x87 ACK
   *   0x08 GET_PARAMS                       -> 0x88 PARAMS(16B: target,kp,ki,kd)
-  *   0x7F NACK  payload: 1 字节错误码（1=CRC错 2=长度错 3=参数越界 4=状态不允许）
+  *   0x7F NACK  payload: 1 字节错误码（1=CRC错 2=长度错 3=参数越界 4=状态不允许 5=Flash失败 6=传感器无效/超温）
   *
   * STATUS 载荷（25B）：
   *   f32 temp | f32 target | u8 duty | u8 fan | u8 state | u8 sim | u8 fault

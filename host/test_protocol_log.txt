@@ -25,7 +25,7 @@ T5 length boundary:
   [PASS] LEN=32 accepted (upper bound)
 T6 junk bytes / resync:
   [PASS] resync after junk -> 1 frame
-  [PASS] junk_bytes=6
+  [PASS] junk_bytes=7
 T7 status payload decode:
   [PASS] status payload len=25 == 25
   [PASS] temp=44.70

@@ -126,7 +126,7 @@ def t5_length_error():
 # ---------------- T6 噪声与重同步 ----------------
 def t6_junk_and_resync():
     section("T6 junk bytes / resync:")
-    stream = b"\x00\x11\xAA\x00\x55\xAA\xA5\x13" + P.build_frame(P.CMD_START)
+    stream = b"\x00\x11\xAA\x00\x55\xAA\xA5\x13\xAA" + P.build_frame(P.CMD_START)
     p = P.Parser()
     out = p.feed(stream)
     check(len(out) == 1 and out[0].cmd == P.CMD_START, f"resync after junk -> {len(out)} frame")

@@ -16,15 +16,30 @@
 
 static int g_failed = 0;
 
-#define CHECK(cond, msg, ...)                                       \
+#define CHECK(cond, ...)                                            \
   do {                                                              \
     if (cond) {                                                     \
-      printf("  [PASS] " msg "\n", __VA_ARGS__);                    \
+      printf("  [PASS] " __VA_ARGS__);                              \
+      printf("\n");                                                 \
     } else {                                                        \
-      printf("  [FAIL] " msg "\n", __VA_ARGS__);                    \
+      printf("  [FAIL] " __VA_ARGS__);                              \
+      printf("\n");                                                 \
       g_failed++;                                                   \
     }                                                               \
   } while (0)
+
+/* 运行期产生 NaN / Inf（volatile 防编译器常量折叠报除零错） */
+static float make_nan(void)
+{
+  volatile float zero = 0.0f;
+  return zero / zero;
+}
+
+static float make_inf(void)
+{
+  volatile float zero = 0.0f;
+  return 1.0f / zero;
+}
 
 /* ==================== T1 CRC32 已知向量 ==================== */
 static void t1_crc_vector(void)
@@ -151,6 +166,40 @@ static void t5_boundary(void)
         (double)b.target_c, (double)b.kp, (double)b.ki, (double)b.kd);
 }
 
+/* ==================== T6 数值范围校验（第二轮审查新增） ==================== */
+static void t6_range_validation(void)
+{
+  app_param_t p;
+
+  printf("T6 param range validation:\n");
+  Param_SetDefaults(&p);
+  CHECK(Param_ValidateRanges(&p) == 0u, "defaults pass range check");
+
+  p.target_c = 70.0f; p.kp = 50.0f; p.ki = 5.0f; p.kd = 20.0f;
+  CHECK(Param_ValidateRanges(&p) == 0u, "upper bounds pass");
+
+  p.target_c = 70.1f;
+  CHECK(Param_ValidateRanges(&p) == 1u, "target 70.1 rejected");
+  p.target_c = -0.1f;
+  CHECK(Param_ValidateRanges(&p) == 1u, "target -0.1 rejected");
+
+  Param_SetDefaults(&p);
+  p.kp = 50.1f;
+  CHECK(Param_ValidateRanges(&p) == 1u, "kp 50.1 rejected");
+  p.kp = 8.0f; p.ki = 5.01f;
+  CHECK(Param_ValidateRanges(&p) == 1u, "ki 5.01 rejected");
+  p.ki = 0.1f; p.kd = 20.1f;
+  CHECK(Param_ValidateRanges(&p) == 1u, "kd 20.1 rejected");
+
+  /* NaN / Inf 必须被拦住（CRC 正确也可能出现这种值） */
+  Param_SetDefaults(&p);
+  p.kp = make_nan();
+  CHECK(Param_ValidateRanges(&p) == 1u, "NaN kp rejected");
+  Param_SetDefaults(&p);
+  p.target_c = make_inf();
+  CHECK(Param_ValidateRanges(&p) == 1u, "Inf target rejected");
+}
+
 int main(void)
 {
   printf("=== TempCtrl param codec tests (host build) ===\n");
@@ -159,6 +208,7 @@ int main(void)
   t3_roundtrip();
   t4_corruption();
   t5_boundary();
+  t6_range_validation();
   printf("=== %s: %d check(s) failed ===\n",
          g_failed == 0 ? "ALL PASS" : "FAILED", g_failed);
   return g_failed == 0 ? 0 : 1;

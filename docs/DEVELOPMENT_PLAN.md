@@ -351,3 +351,22 @@ Program Size: Code=17114 RO-data=2042 RW-data=56 ZI-data=3160
 | `docs/RESUME_AND_INTERVIEW.md` | 简历条目（完整/精简）、STAR 口述、20 个高频面试问答 |
 | `tests/` | `test_pid.c`、`test_param.c`、`run_tests.bat` 及实测日志 |
 | `host/` | `protocol.py`、`app_gui.py`、`monitor_cli.py`、`test_protocol.py` 及日志 |
+
+---
+
+## 10. 第二轮安全审查（2026-10-18，待审核）
+
+详见 `docs/SECURITY_REVIEW_2.md`。核心变更：
+
+| 问题 | 修复 |
+|------|------|
+| P0：无 NTC 时自动切模拟，PID 用假温度驱动真实 PA8 | 删除自动切换；模拟改为编译期 `SENSOR_SIM_ENABLE`（默认 0）；删除 `Sensor_ForceSimulation` |
+| P0：加热器无硬件输出闸门 | `Heater_EnableOutput()` 默认关；闸门关时 CCR 恒 0；`Heater_Off()` = 清零 + 关闸 |
+| P0：START / ACK 不校验传感器 | `Control_Start()` 做新鲜读数校验（返回 3=传感器无效）；`Control_AckFault()` 复核并返回状态 |
+| P1：NTC 换算无合理性界 | 超出 [-40,150]℃ 判 invalid |
+| P1：Flash 只校验 CRC | 增加 `Param_ValidateRanges()`，Load 时校验失败回默认 |
+| P1：保存失败误报越界 | 新增 ACK 码 5（Flash）/ 6（传感器） |
+| P1：时间片补执行导致 PID 连算 | 三档时间片改 `last = now` |
+
+复测（实际执行）：编译 0E0W（Code=17306B）、宿主机 C 测试 50 项全过、协议测试 46 项全过。
+未执行：全部上板验证（见 SECURITY_REVIEW_2.md「仍未验证」）。**本轮未提交 Git，等审核。**

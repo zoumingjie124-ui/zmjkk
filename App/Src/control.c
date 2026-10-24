@@ -104,10 +104,30 @@ const ctrl_params_t *Control_GetParams(void)
 
 uint8_t Control_Start(void)
 {
+  Sensor_Data_t d;
+
   if (s_snap.state != CTRL_STANDBY)
   {
     return 2u;
   }
+
+  /* 安全校验：启动前必须拿到**新鲜**且有效的测量值。
+     按键与串口两个入口都走这里，不存在旁路。 */
+  d = Sensor_Read();
+  if (!d.is_valid || d.temperature_c > CTRL_SAFE_LIMIT_C)
+  {
+    Heater_Off();                 /* 逻辑清零 + 关硬件闸门 */
+    Fan_On();
+    s_snap.state        = CTRL_FAULT;
+    s_snap.fault        = (!d.is_valid) ? CTRL_FAULT_SENSOR : CTRL_FAULT_OVERTEMP;
+    s_snap.temp_c       = d.temperature_c;
+    s_snap.temp_valid   = d.is_valid;
+    s_snap.is_simulated = d.is_simulated;
+    s_snap.duty         = Heater_GetDuty();
+    s_snap.fan_on       = Fan_IsOn();
+    return 3u;                    /* 传感器无效或超温，拒绝启动并锁定 */
+  }
+
   pid_reset(&s_pid);              /* 每次启动清零积分，避免沿用旧累积 */
   s_snap.state = CTRL_RUNNING;
   return 0u;
@@ -119,7 +139,7 @@ uint8_t Control_Stop(void)
   {
     return 2u;
   }
-  Heater_Off();
+  Heater_Off();                   /* 逻辑 + 硬件闸门一起关 */
   Fan_Off();
   s_snap.duty   = Heater_GetDuty();
   s_snap.fan_on = Fan_IsOn();
@@ -127,17 +147,37 @@ uint8_t Control_Stop(void)
   return 0u;
 }
 
-void Control_AckFault(void)
+uint8_t Control_AckFault(void)
 {
-  if (s_snap.state == CTRL_FAULT)
+  Sensor_Data_t d;
+
+  if (s_snap.state != CTRL_FAULT)
   {
-    s_snap.fault = CTRL_FAULT_NONE;
-    s_snap.state = CTRL_STANDBY;  /* 只回待机，不自动恢复闭环 */
-    Heater_Off();
-    Fan_Off();
-    s_snap.duty   = Heater_GetDuty();
-    s_snap.fan_on = Fan_IsOn();
+    return 2u;
   }
+
+  /* 故障确认前复核传感器与超温状态：仍无效或仍超温就保持锁定，
+     返回 3u（由 comm.c 映射为 ACK_SENSOR_ERR=6），避免误关停散热风扇 */
+  d = Sensor_Read();
+  if (!d.is_valid || d.temperature_c > CTRL_SAFE_LIMIT_C)
+  {
+    Heater_Off();
+    Fan_On();
+    s_snap.fault      = (!d.is_valid) ? CTRL_FAULT_SENSOR : CTRL_FAULT_OVERTEMP;
+    s_snap.temp_c     = d.temperature_c;
+    s_snap.temp_valid = d.is_valid;
+    s_snap.duty       = Heater_GetDuty();
+    s_snap.fan_on     = Fan_IsOn();
+    return 3u;
+  }
+
+  s_snap.fault  = CTRL_FAULT_NONE;
+  s_snap.state  = CTRL_STANDBY;   /* 只回待机，不自动恢复闭环 */
+  Heater_Off();
+  Fan_Off();
+  s_snap.duty   = Heater_GetDuty();
+  s_snap.fan_on = Fan_IsOn();
+  return 0u;
 }
 
 /* ---------------- 安全联锁 ---------------- */
@@ -192,6 +232,11 @@ void Control_Tick(void)
       {
         break;
       }
+
+      /* 硬件输出闸门（第二轮审查）：模拟数据绝不允许驱动真实 PA8。
+         REAL 模式才会开闸；SIM 模式下 PID 仍计算，但占空比只落在逻辑变量里。 */
+      Heater_EnableOutput(d.is_simulated ? 0u : 1u);
+
       {
         float u = pid_update(&s_pid, s_params.target_c, d.temperature_c);
 
@@ -205,8 +250,8 @@ void Control_Tick(void)
           s_snap.fan_on = Fan_IsOn();
           break;
         }
-        Heater_SetDuty((uint8_t)u);
-        s_snap.duty = Heater_GetDuty();
+        Heater_SetDuty((uint8_t)u);     /* SetDuty 内部 0~100 限幅 */
+        s_snap.duty = Heater_GetDuty(); /* 逻辑占空比（模拟模型据此演化） */
       }
 
       /* 风扇迟滞：高于目标+2.0℃ 开，回落到目标+0.5℃ 内关 */

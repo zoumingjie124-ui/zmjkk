@@ -37,6 +37,16 @@ uint8_t Param_Load(app_param_t *p)
     s_default_restored = 1u;
     return 0u;
   }
+
+  /* 第二轮审查：CRC 正确不代表数值合理（脏数据/误写同样能算对 CRC），
+     加载层必须自己把关，不能只依赖上层限幅 */
+  if (Param_ValidateRanges(p) != 0u)
+  {
+    Param_SetDefaults(p);
+    s_default_restored = 1u;
+    return 0u;
+  }
+
   s_default_restored = 0u;
   return 1u;
 }

@@ -29,6 +29,20 @@
 #define ACK_LEN_ERR     2u
 #define ACK_RANGE_ERR   3u
 #define ACK_STATE_ERR   4u
+#define ACK_FLASH_ERR   5u   /* Flash 擦除/写入/回读失败（第二轮审查新增） */
+#define ACK_SENSOR_ERR  6u   /* 传感器无效，拒绝启动/无法确认故障（新增） */
+
+/* Control 返回值 -> 通信错误码映射（0 成功/1 参数/2 状态/3 传感器无效） */
+static uint8_t map_ctrl_status(uint8_t st)
+{
+  switch (st)
+  {
+    case 0u:  return ACK_OK;
+    case 1u:  return ACK_RANGE_ERR;
+    case 3u:  return ACK_SENSOR_ERR;
+    default:  return ACK_STATE_ERR;
+  }
+}
 
 #define MAX_PAYLOAD     32u
 #define REPORT_PERIOD_MS 200u
@@ -185,20 +199,20 @@ static void handle_frame(uint8_t cmd, const uint8_t *pl, uint8_t len)
 
     case CMD_START:
       if (len != 0u) { send_ack(cmd, ACK_LEN_ERR); break; }
-      status = Control_Start();
-      send_ack(cmd, (uint8_t)(status == 0u ? ACK_OK : ACK_STATE_ERR));
+      status = Control_Start();          /* 内部做传感器新鲜读数校验 */
+      send_ack(cmd, map_ctrl_status(status));
       break;
 
     case CMD_STOP:
       if (len != 0u) { send_ack(cmd, ACK_LEN_ERR); break; }
       status = Control_Stop();
-      send_ack(cmd, (uint8_t)(status == 0u ? ACK_OK : ACK_STATE_ERR));
+      send_ack(cmd, map_ctrl_status(status));
       break;
 
     case CMD_ACK_FAULT:
       if (len != 0u) { send_ack(cmd, ACK_LEN_ERR); break; }
-      Control_AckFault();
-      send_ack(cmd, ACK_OK);
+      status = Control_AckFault();       /* 传感器仍无效时保持锁定 */
+      send_ack(cmd, map_ctrl_status(status));
       break;
 
     case CMD_SET_PID:
@@ -212,7 +226,7 @@ static void handle_frame(uint8_t cmd, const uint8_t *pl, uint8_t len)
       const ctrl_params_t *p = Control_GetParams();
       if (len != 0u) { send_ack(cmd, ACK_LEN_ERR); break; }
       status = Param_SaveValues(p->target_c, p->kp, p->ki, p->kd);
-      send_ack(cmd, (uint8_t)(status == 0u ? ACK_OK : ACK_RANGE_ERR));
+      send_ack(cmd, (uint8_t)(status == 0u ? ACK_OK : ACK_FLASH_ERR));
       break;
     }
 
@@ -244,7 +258,9 @@ static void parser_feed(uint8_t b)
       break;
 
     case PS_H2:
-      s_ps = (b == FRAME_H2) ? PS_CMD : PS_H1;
+      if (b == FRAME_H2)      { s_ps = PS_CMD; }
+      else if (b == FRAME_H1) { s_ps = PS_H2;  } /* 连续 0xAA：当前字节可能为真帧头 H1 */
+      else                    { s_ps = PS_H1;  }
       break;
 
     case PS_CMD:

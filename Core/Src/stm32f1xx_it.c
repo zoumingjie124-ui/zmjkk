@@ -17,6 +17,10 @@ void NMI_Handler(void)
 
 void HardFault_Handler(void)
 {
+  /* 硬件异常瞬间立即关闭 TIM1 主输出（MOE=0）并拉低 PA8，随后等待 IWDG 硬件复位 */
+  TIM1->BDTR &= ~TIM_BDTR_MOE;
+  GPIOA->BRR  = HEATER_Pin;
+  GPIOB->BSRR = FAN_Pin;
   while (1) { }
 }
 

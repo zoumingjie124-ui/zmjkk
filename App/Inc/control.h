@@ -66,13 +66,13 @@ typedef struct
   uint8_t      is_simulated;
 } ctrl_snapshot_t;
 
-/* 返回值约定：0 = 成功，1 = 参数越界/非法，2 = 当前状态不允许 */
+/* 返回值约定：0 = 成功，1 = 参数越界/非法，2 = 当前状态不允许，3 = 传感器无效或仍超温 */
 void Control_Init(void);
 void Control_Tick(void);                     /* 严格每 500ms 调用 */
 
-uint8_t Control_Start(void);                 /* STANDBY -> RUNNING */
+uint8_t Control_Start(void);                 /* STANDBY -> RUNNING（会先做传感器新鲜读数校验） */
 uint8_t Control_Stop(void);                  /* RUNNING -> STANDBY */
-void    Control_AckFault(void);              /* FAULT -> STANDBY（人工确认） */
+uint8_t Control_AckFault(void);              /* FAULT -> STANDBY；传感器仍无效或仍超温则保持锁定并返回 3 */
 
 uint8_t Control_SetTarget(float target_c);
 uint8_t Control_SetPid(float kp, float ki, float kd);

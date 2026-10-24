@@ -72,6 +72,29 @@ void Param_SetDefaults(app_param_t *p)
   p->crc32    = 0u;              /* 序列化时重算 */
 }
 
+/**
+  * @brief 参数数值合理性校验（第二轮审查新增）
+  * @retval 0 = 通过；1 = 越界或非有限数值（NaN/Inf）
+  * @note   范围镜像 control.h：target 0~70℃、kp 0~50、ki 0~5、kd 0~20
+  */
+uint8_t Param_ValidateRanges(const app_param_t *p)
+{
+  /* NaN 用自比较判定；Inf 通过范围比较自然被拦下 */
+  if (p->target_c != p->target_c || p->kp != p->kp ||
+      p->ki != p->ki || p->kd != p->kd)
+  {
+    return 1u;
+  }
+  if (p->target_c < 0.0f  || p->target_c > 70.0f ||
+      p->kp       < 0.0f  || p->kp       > 50.0f ||
+      p->ki       < 0.0f  || p->ki       > 5.0f  ||
+      p->kd       < 0.0f  || p->kd       > 20.0f)
+  {
+    return 1u;
+  }
+  return 0u;
+}
+
 uint32_t Param_Serialize(const app_param_t *p, uint8_t *buf)
 {
   uint32_t crc;

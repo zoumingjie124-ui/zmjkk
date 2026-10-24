@@ -25,4 +25,14 @@ T5 boundary values:
   [PASS] min bounds round trip ok
   [PASS] max bounds round trip ok
   [PASS] max values preserved: 70.0 50.0 5.00 20.0
+T6 param range validation:
+  [PASS] defaults pass range check
+  [PASS] upper bounds pass
+  [PASS] target 70.1 rejected
+  [PASS] target -0.1 rejected
+  [PASS] kp 50.1 rejected
+  [PASS] ki 5.01 rejected
+  [PASS] kd 20.1 rejected
+  [PASS] NaN kp rejected
+  [PASS] Inf target rejected
 === ALL PASS: 0 check(s) failed ===

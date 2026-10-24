@@ -35,6 +35,8 @@ ACK_CRC_ERR = 1
 ACK_LEN_ERR = 2
 ACK_RANGE_ERR = 3
 ACK_STATE_ERR = 4
+ACK_FLASH_ERR = 5      # Flash 擦除/写入/回读失败（第二轮审查新增）
+ACK_SENSOR_ERR = 6     # 传感器无效，拒绝启动 / 无法确认故障（新增）
 
 ACK_TEXT = {
     ACK_OK: "OK",
@@ -42,6 +44,8 @@ ACK_TEXT = {
     ACK_LEN_ERR: "length/protocol error",
     ACK_RANGE_ERR: "value out of range",
     ACK_STATE_ERR: "state not allowed",
+    ACK_FLASH_ERR: "flash save failed",
+    ACK_SENSOR_ERR: "sensor invalid",
 }
 
 STATE_NAMES = {0: "INI", 1: "STB", 2: "RUN", 3: "FLT"}
@@ -175,8 +179,13 @@ class Parser:
                 else:
                     self.junk_bytes += 1
             elif state == "H2":
-                self._state = "CMD" if b == H2 else "H1"
-                if b != H2:
+                if b == H2:
+                    self._state = "CMD"
+                elif b == H1:
+                    self._state = "H2"
+                    self.junk_bytes += 1
+                else:
+                    self._state = "H1"
                     self.junk_bytes += 1
             elif state == "CMD":
                 self._cmd = b

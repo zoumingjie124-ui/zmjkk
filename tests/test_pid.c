@@ -26,12 +26,14 @@
 
 static int g_failed = 0;
 
-#define CHECK(cond, msg, ...)                                       \
+#define CHECK(cond, ...)                                            \
   do {                                                              \
     if (cond) {                                                     \
-      printf("  [PASS] " msg "\n", __VA_ARGS__);                    \
+      printf("  [PASS] " __VA_ARGS__);                              \
+      printf("\n");                                                 \
     } else {                                                        \
-      printf("  [FAIL] " msg "\n", __VA_ARGS__);                    \
+      printf("  [FAIL] " __VA_ARGS__);                              \
+      printf("\n");                                                 \
       g_failed++;                                                   \
     }                                                               \
   } while (0)

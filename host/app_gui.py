@@ -165,8 +165,7 @@ class App(tk.Tk):
         self.e_target = tk.Entry(panel, width=10)
         self.e_target.insert(0, "45.0")
         self.e_target.grid(row=row, column=0, sticky="w", pady=2)
-        tk.Button(panel, text="下发", width=8,
-                  command=lambda: self._send(P.build_set_target(self._f(self.e_target)))).grid(
+        tk.Button(panel, text="下发", width=8, command=self._apply_target).grid(
             row=row, column=1, padx=4)
         row += 1
 
@@ -254,6 +253,13 @@ class App(tk.Tk):
             self.worker.send(data)
         except Exception as exc:  # noqa: BLE001
             self._log(f"发送失败: {exc}")
+
+    def _apply_target(self) -> None:
+        t = self._f(self.e_target)
+        if not P.validate_target(t):
+            self._log("目标温度超出允许范围（0~70 ℃），已阻止发送")
+            return
+        self._send(P.build_set_target(t))
 
     def _apply_pid(self) -> None:
         kp, ki, kd = self._f(self.e_kp), self._f(self.e_ki), self._f(self.e_kd)
