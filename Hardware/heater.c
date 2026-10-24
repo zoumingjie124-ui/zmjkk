@@ -76,7 +76,7 @@ void Heater_Off(void)
 
 /**
   * @brief 致命异常的最后关断（裸寄存器，不依赖 HAL 与外设状态）
-  * @note  顺序不可调换：先关 MOE 再改引脚模式，避免切换瞬间输出高电平
+  * @note  顺序不可调换，理由见每步注释
   */
 void Heater_PanicOff(void)
 {
@@ -84,21 +84,30 @@ void Heater_PanicOff(void)
         不开启时钟的话后面写 CRH/BRR 会被硬件忽略 */
   RCC->APB2ENR |= (RCC_APB2ENR_IOPAEN | RCC_APB2ENR_IOPBEN);
 
-  /* 1) 关 TIM1 主输出 + 停计数器（避免残余比较事件再次驱动输出） */
+  /* 1) 先把定时器通道的空闲电平定为低：若 BDTR.OSSI=1，MOE=0 时会直接
+        进入 OIS1 定义的空闲态；置 0 可避免依赖复位默认值 */
+  TIM1->CR2 &= ~TIM_CR2_OIS1;
+
+  /* 2) 关 TIM1 主输出（MOE=0） */
   TIM1->BDTR &= ~TIM_BDTR_MOE;
-  TIM1->CR1  &= ~TIM_CR1_CEN;
 
-  /* 2) PA8：复用推挽 -> 通用推挽输出
-        GPIOA->CRH 的 bit[3:0] 是 PA8：MODE=10(输出2MHz) CNF=00(通用推挽)
-        单次读改写，避免中间出现"输入模式"的悬空窗口 */
-  GPIOA->CRH = (GPIOA->CRH & ~(0xFu << 0)) | (0x2u << 0);
+  /* 3) 停计数器，避免残余比较事件再次驱动输出 */
+  TIM1->CR1 &= ~TIM_CR1_CEN;
 
-  /* 3) 驱动 PA8 为低电平（此时 GPIO 输出驱动器才真正接管引脚） */
+  /* 4) 先把 GPIO 输出锁存器清零（此时仍是 AF 模式，写 ODR 不影响引脚，
+        只是为下一步切换做准备）——不能放在切换之后，否则若 ODR 残留为 1，
+        切到通用输出的瞬间会先输出一个高电平毛刺 */
   GPIOA->BRR = HEATER_Pin;
 
-  /* 4) 风扇全开（PB0 若尚未配置为输出则无效果，属可接受降级） */
+  /* 5) PA8：复用推挽 -> 通用推挽输出
+        GPIOA->CRH 的 bit[3:0] 是 PA8：MODE=10(输出2MHz) CNF=00(通用推挽)
+        单次读改写，避免中间出现"输入模式"的悬空窗口；
+        切换瞬间 GPIO 驱动器接管引脚，因 ODR=0 而立即为低 */
+  GPIOA->CRH = (GPIOA->CRH & ~(0xFu << 0)) | (0x2u << 0);
+
+  /* 6) 风扇全开（PB0 若尚未配置为输出则无效果，属可接受降级） */
   GPIOB->BSRR = FAN_Pin;
 
-  /* 5) 等写操作落地再进入死循环（由调用方 while(1) 等待 IWDG 复位） */
+  /* 7) 等写操作落地再进入死循环（由调用方 while(1) 等待 IWDG 复位） */
   __DSB();
 }
