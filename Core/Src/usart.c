@@ -17,7 +17,8 @@ static uint8_t           s_rx_byte;                  /* 中断接收暂存 */
 static volatile uint8_t  s_ring[RX_RING_SIZE];
 static volatile uint16_t s_head;                     /* 写入位置（中断改） */
 static volatile uint16_t s_tail;                     /* 读取位置（主循环改） */
-static uint32_t           s_overflow;
+static volatile uint32_t s_overflow;                 /* 溢出丢弃字节数（中断改） */
+static volatile uint32_t s_rx_count;                 /* 成功入环字节数（中断改） */
 
 void MX_USART1_UART_Init(void)
 {
@@ -40,6 +41,7 @@ void Usart_StartRx(void)
   s_head     = 0u;
   s_tail     = 0u;
   s_overflow = 0u;
+  s_rx_count = 0u;
   (void)HAL_UART_Receive_IT(&huart1, &s_rx_byte, 1u);
 }
 
@@ -57,6 +59,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
     {
       s_ring[s_head] = s_rx_byte;
       s_head = next;
+      s_rx_count++;
     }
     else
     {
@@ -90,4 +93,9 @@ void Usart_Send(const uint8_t *data, uint16_t len)
 uint32_t Usart_OverflowCount(void)
 {
   return s_overflow;
+}
+
+uint32_t Usart_RxByteCount(void)
+{
+  return s_rx_count;
 }

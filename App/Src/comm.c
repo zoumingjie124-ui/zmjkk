@@ -20,6 +20,7 @@
 #define CMD_SET_PID     0x06u
 #define CMD_SAVE_PARAMS 0x07u
 #define CMD_GET_PARAMS  0x08u
+#define CMD_GET_DIAG    0x09u   /* 诊断：读环形缓冲溢出/累计接收字节 */
 
 #define RESP_FLAG       0x80u
 #define CMD_NACK        0x7Fu
@@ -102,6 +103,14 @@ static void put_f32(uint8_t *buf, float v)
   buf[3] = (uint8_t)((u >> 24) & 0xFFu);
 }
 
+static void put_u32(uint8_t *buf, uint32_t u)
+{
+  buf[0] = (uint8_t)(u & 0xFFu);
+  buf[1] = (uint8_t)((u >> 8) & 0xFFu);
+  buf[2] = (uint8_t)((u >> 16) & 0xFFu);
+  buf[3] = (uint8_t)((u >> 24) & 0xFFu);
+}
+
 static float get_f32(const uint8_t *buf)
 {
   uint32_t u;
@@ -178,6 +187,17 @@ static void send_params(void)
   send_frame((uint8_t)(CMD_GET_PARAMS | RESP_FLAG), pl, 16u);
 }
 
+/* 诊断帧：让"链路上到底丢了多少字节"变成可读的数字。
+   在此之前 Usart_OverflowCount() 只有定义没有调用者，溢出在固件侧完全不可见。 */
+static void send_diag(void)
+{
+  uint8_t pl[8];
+
+  put_u32(&pl[0], Usart_OverflowCount());   /* 环形缓冲溢出丢弃的字节数 */
+  put_u32(&pl[4], Usart_RxByteCount());     /* 累计成功入环的字节数 */
+  send_frame((uint8_t)(CMD_GET_DIAG | RESP_FLAG), pl, 8u);
+}
+
 /* ---------------- 命令分发 ---------------- */
 
 static void handle_frame(uint8_t cmd, const uint8_t *pl, uint8_t len)
@@ -233,6 +253,11 @@ static void handle_frame(uint8_t cmd, const uint8_t *pl, uint8_t len)
     case CMD_GET_PARAMS:
       if (len != 0u) { send_ack(cmd, ACK_LEN_ERR); break; }
       send_params();
+      break;
+
+    case CMD_GET_DIAG:
+      if (len != 0u) { send_ack(cmd, ACK_LEN_ERR); break; }
+      send_diag();
       break;
 
     default:
