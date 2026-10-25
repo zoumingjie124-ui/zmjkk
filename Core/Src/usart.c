@@ -9,7 +9,7 @@
   */
 #include "usart.h"
 
-#define RX_RING_SIZE  128u
+#define RX_RING_SIZE  USART_RX_RING_SIZE
 
 UART_HandleTypeDef huart1;
 

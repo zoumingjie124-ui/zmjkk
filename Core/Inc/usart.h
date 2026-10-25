@@ -9,6 +9,8 @@
 
 #include "main.h"
 
+#define USART_RX_RING_SIZE  128u                    /* 环形缓冲容量，comm.c 的消化上限也取它 */
+
 extern UART_HandleTypeDef huart1;
 
 void    MX_USART1_UART_Init(void);

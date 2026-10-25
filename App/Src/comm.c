@@ -48,6 +48,15 @@ static uint8_t map_ctrl_status(uint8_t st)
 #define MAX_PAYLOAD     32u
 #define REPORT_PERIOD_MS 200u
 
+/* 一次 tick 的接收消化上限。两个上限各管一件事：
+   字节数 = 环形缓冲容量 128B，10ms 时基下等于 12.8KB/s，刚好盖住 115200 8N1 的
+   11.5KB/s（原来的 64B 只有 6.4KB/s，全速灌包必然溢出丢字节）。
+   时间 = 3ms，防 NACK 风暴：连续坏帧每个都会触发一次阻塞发送，
+   若不定时上限，约 40 个 NACK 能把主循环拖住近 30ms，挤掉按键与 PID 的时间片。
+   正常路径消化 128 字节只要几十微秒，这个时间上限碰不到。 */
+#define RX_DRAIN_MAX_BYTES  USART_RX_RING_SIZE
+#define RX_DRAIN_MAX_MS     3u
+
 typedef enum
 {
   PS_H1 = 0,
@@ -363,10 +372,15 @@ void Comm_Tick(void)
 {
   uint8_t  b;
   uint16_t guard = 0u;
+  uint32_t t0;
   uint32_t now   = HAL_GetTick();
 
-  /* 每 tick 最多消化 64 字节，避免极端数据量把主循环卡死 */
-  while (guard++ < 64u && Usart_ReadByte(&b))
+  /* 每 tick 最多消化 128 字节（环容量）且不超过 3ms，见 RX_DRAIN_MAX_* 的说明。
+     触到上限时剩余字节留在环里，下个 tick 继续，不丢数据。 */
+  t0 = now;
+  while ((guard++ < RX_DRAIN_MAX_BYTES) &&
+         ((HAL_GetTick() - t0) < RX_DRAIN_MAX_MS) &&
+         Usart_ReadByte(&b))
   {
     parser_feed(b);
   }
