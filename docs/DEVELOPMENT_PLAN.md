@@ -195,7 +195,7 @@ Program Size: Code=9906 RO-data=2042 RW-data=32 ZI-data=2840
 （期间修 1 个错误：OLED_ShowString char* 与 const char* 不兼容，已把 OLED API 改为 const char*。）
 
 ### 5.4 PID 离线单元测试【模拟】——实际运行日志
-执行方式：`tests\run_tests.bat`（宿主机 MSVC cl 编译，`#include "../App/Src/pid.c"` 单编译单元直测固件逻辑），完整日志见 `tests/pid_test.log`：
+执行方式：`tests\run_tests.bat`（宿主机 MSVC cl 编译，`#include "../App/Src/pid.c"` 单编译单元直测固件逻辑），完整日志快照见 `docs/evidence/pid_test_2026-10-30.log`：
 
 ```
 === TempCtrl PID unit tests (host build, tests real pid.c) ===

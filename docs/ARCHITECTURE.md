@@ -158,7 +158,7 @@ IWDG 复位窗口（0.67~1.33s）内负载仍按最后占空比工作。**真实
 
 | 项 | 数值 | 占比 |
 |----|------|------|
-| Code | 17950 B | 27.4% of 64KB（Code+RO+RW 总计 20056 B，占 Flash 30.6%） |
+| Code | 17978 B | 27.4% of 64KB（Code+RO+RW 总计 20084 B，占 Flash 30.6%） |
 | RO-data | 2042 B | — |
 | RW-data | 48 B | — |
 | ZI-data | 3176 B | 含 RW 总 RAM 3240 B（15.8% of 20KB） |

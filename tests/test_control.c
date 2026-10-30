@@ -24,6 +24,7 @@
   *   C8 SIM 数据源：闸门恒关
   *   C9 热失控窗口：单 tick 条件失效只衰减 1 个 tick 的证据，不清零
   *   C10 大热容慢升温 + 周期性 1-tick 抖动：不误报热失控
+  *   C11 运行中改目标：热失控窗口证据清零，不被跨目标的旧窗口误判
   ******************************************************************************
   */
 #include <stdio.h>
@@ -415,16 +416,17 @@ static void c9_dip_does_not_reset_window(void)
   before = s_rw_ticks;                    /* 同 TU 内可见（control.c 被 include） */
   CHECK(before >= 95u, "evidence accumulated (%u ticks)", (unsigned)before);
 
-  /* 制造恰好一个 tick 的"条件不成立"：目标临时贴近当前温度，误差 1℃ < 3℃ */
-  (void)Control_SetTarget(26.0f);
+  /* 制造恰好一个 tick 的"条件不成立"：临时把 PID 输出上限压到 50%，
+     使该 tick 占空比 < 800‰（不能用改目标，因为改目标本身会清空证据） */
+  s_pid.out_max = 50.0f;
   Control_Tick();
   plant_step(&pl);
+  s_pid.out_max = 100.0f;
   after = s_rw_ticks;
   CHECK(after == (uint16_t)(before - 1u),
         "dip decays evidence by 1, not reset (%u -> %u)",
         (unsigned)before, (unsigned)after);
 
-  (void)Control_SetTarget(45.0f);
   for (k = 0; k < 60; k++)
   {
     Control_Tick();
@@ -450,13 +452,12 @@ static void c10_slow_plant_with_dips_no_false_trip(void)
 
   for (k = 0; k < 600; k++)               /* 300s */
   {
-    if ((k % 40) == 0 && k > 0)           /* 每 20s 制造一个条件失效 tick */
+    if ((k % 40) == 0 && k > 0)           /* 每 20s 制造一个条件失效 tick（压占空比，不改目标） */
     {
-      float saved = Control_GetParams()->target_c;
-      (void)Control_SetTarget(Control_Get()->temp_c + 1.0f);
+      s_pid.out_max = 50.0f;
       Control_Tick();
       plant_step(&pl);
-      (void)Control_SetTarget(saved);
+      s_pid.out_max = 100.0f;
     }
     Control_Tick();
     plant_step(&pl);
@@ -464,6 +465,45 @@ static void c10_slow_plant_with_dips_no_false_trip(void)
   }
   CHECK(faults == 0, "no false runaway within 300s");
   CHECK(Control_Get()->temp_c > 30.0f, "still heating (T=%.1fC)", (double)Control_Get()->temp_c);
+}
+
+/* ============================ C11 改目标清空热失控窗口 ============================ */
+static void c11_target_change_resets_window(void)
+{
+  plant_t pl;
+  int k, fault_early = -1;
+
+  printf("C11 target change clears runaway evidence (no cross-setpoint window):\n");
+  reset_all(&pl, 12);
+  pl.detached = 1u;                       /* 传感器钉在室温，制造持续大误差 */
+  CHECK(Control_Start() == 0u, "start accepted");
+
+  for (k = 0; k < 100; k++)
+  {
+    Control_Tick();
+    plant_step(&pl);
+  }
+  CHECK(s_rw_ticks >= 95u, "evidence accumulated before change (%u)", (unsigned)s_rw_ticks);
+
+  CHECK(Control_SetTarget(60.0f) == 0u, "target changed to 60C");
+  CHECK(s_rw_ticks == 0u, "window cleared on setpoint change (%u)", (unsigned)s_rw_ticks);
+
+  for (k = 0; k < 110; k++)               /* 新窗口还没走完，不应触发 */
+  {
+    Control_Tick();
+    plant_step(&pl);
+    if (Control_Get()->state == CTRL_FAULT) { fault_early = k; break; }
+  }
+  CHECK(fault_early < 0, "no fault before the fresh window completes");
+
+  for (k = 0; k < 30; k++)                /* 真正的失控仍要被抓到 */
+  {
+    Control_Tick();
+    plant_step(&pl);
+    if (Control_Get()->state == CTRL_FAULT) { break; }
+  }
+  CHECK(Control_Get()->state == CTRL_FAULT && Control_Get()->fault == CTRL_FAULT_RUNAWAY,
+        "real runaway still detected after reset (%d)", (int)Control_Get()->fault);
 }
 
 int main(void)
@@ -481,6 +521,7 @@ int main(void)
   c8_sim_gate();
   c9_dip_does_not_reset_window();
   c10_slow_plant_with_dips_no_false_trip();
+  c11_target_change_resets_window();
   printf("=== %s: %d check(s) failed ===\n", g_failed == 0 ? "ALL PASS" : "FAILED", g_failed);
   return g_failed == 0 ? 0 : 1;
 }

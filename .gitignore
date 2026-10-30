@@ -6,3 +6,10 @@ __pycache__/
 *.pyc
 *.uvoptx
 review_changes.patch
+
+# 构建/测试日志：每次构建都会变，不入版本库；证据快照见 docs/evidence/
+MDK-ARM/rebuild.log
+MDK-ARM/build.log
+tests/*.log
+host/*_log.txt
+*.build_log.htm

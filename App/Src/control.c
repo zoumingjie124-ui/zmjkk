@@ -120,6 +120,11 @@ uint8_t Control_SetTarget(float target_c)
   }
   s_params.target_c = target_c;
   s_snap.target_c   = target_c;
+
+  /* 目标变了，"该加热却没升温"的判定前提也变了：清掉已累计的证据，
+     否则旧目标下攒了 55s 的窗口会在新目标上继续计时，可能在 5s 后
+     用一个跨目标的时间窗误报热失控（第四轮审查 #1）。 */
+  s_rw_ticks = 0u;
   return 0u;
 }
 
@@ -303,7 +308,18 @@ void Control_Tick(void)
           break;
         }
 
-        /* PID 输出 0~100.0% -> ‰（四舍五入，0.1% 分辨率；SetDutyPermille 内部再限幅） */
+        /* PID 输出 0~100.0% -> ‰（四舍五入，0.1% 分辨率；SetDutyPermille 内部再限幅）
+           强转前必须显式钳位：若将来有人把 pid.out_min 改成负值（测试里就这么干过），
+           负 float 转无符号是未定义行为，可能回绕成 65535 -> 限幅成 1000‰ ->
+           本该"不加热"却变成 100% 满功率。NaN 也用 !(u>0) 一并拦掉。 */
+        if (!(u > 0.0f))
+        {
+          u = 0.0f;                        /* 含 NaN 与负值 */
+        }
+        else if (u > 100.0f)
+        {
+          u = 100.0f;
+        }
         {
           uint16_t permille = (uint16_t)(u * 10.0f + 0.5f);
 
@@ -314,7 +330,8 @@ void Control_Tick(void)
           }
           Heater_SetDutyPermille(permille);
         }
-        s_snap.duty = Heater_GetDuty(); /* 逻辑占空比（模拟模型据此演化） */
+        s_snap.duty = Heater_GetDuty(); /* 四舍五入后的百分比占空比，仅供 OLED 与状态帧上报；
+                                           模拟模型的温度演化读 Heater_GetDutyPermille() */
       }
 
       /* 风扇迟滞：高于目标+2.0℃ 开，回落到目标+0.5℃ 内关 */

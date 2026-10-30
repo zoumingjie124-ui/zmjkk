@@ -66,4 +66,11 @@ C10 slow plant (tau_nat=240s) with periodic one-tick dips: no false runaway:
   [PASS] start accepted
   [PASS] no false runaway within 300s
   [PASS] still heating (T=35.7C)
+C11 target change clears runaway evidence (no cross-setpoint window):
+  [PASS] start accepted
+  [PASS] evidence accumulated before change (100)
+  [PASS] target changed to 60C
+  [PASS] window cleared on setpoint change (0)
+  [PASS] no fault before the fresh window completes
+  [PASS] real runaway still detected after reset (3)
 === ALL PASS: 0 check(s) failed ===
