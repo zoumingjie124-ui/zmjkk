@@ -54,6 +54,13 @@
 第 2 步：发 AA 55 01 00 <crc_l> <crc_h>  (一条完整的 GET_STATUS)
 预期（正确实现）：第 2 步应收到 0x81 状态帧
 实测（当前实现）：收不到 0x81，而是收到 0x7F 01（NACK CRC 错误）
+
+**回归复现脚本**：`host/repro_truncated_frame.py`（保留在仓库中，上板后可直接跑）
+```bash
+python host/repro_truncated_frame.py --port COM5 --dry-run   # 只看要发的字节，不连接
+python host/repro_truncated_frame.py --port COM5             # 实测：期望看到 0x7F 01
+```
+修复后该脚本应打印"未观察到 NACK"，可作为验收判据。目前固件**尚未修复**（属协议健壮性待办，不影响主功能）。
 ```
 
 **判定**：协议层健壮性缺陷。C 实现里没有帧内超时，而 Python 侧的 `t3_roundtrip_and_split` 只测了"跨两次 feed 的正常帧"，测不出这个场景——这也是"Python 测过 ≠ C 写对了"的典型。

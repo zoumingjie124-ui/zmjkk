@@ -23,7 +23,7 @@
 
 | 数值 | 出现位置 | 来源 | 能否用当前工程复现 |
 |------|----------|------|--------------------|
-| **17978 B** | 本表、README、ARCHITECTURE、RESUME | 当前 HEAD 全量重编译（证据快照 `docs/evidence/rebuild_2026-10-30.log`） | ✅ **能**，多次重编结果一致 |
+| **17978 B** | 本表、README、ARCHITECTURE、RESUME | 当前 HEAD 全量重编译（证据快照 `docs/evidence/2026-10-30/rebuild.log`） | ✅ **能**，多次重编结果一致 |
 | 17950 B | 第四轮补丁应用后（漏桶计时，未含本轮审查修正） | 上一版基线 | ❌ 代码已变更 |
 | 17938 B | 第四轮补丁应用后、漏桶计时改造前（worktree 验证） | 仅用于追溯，未作为发布基线 | ❌ 代码已变更 |
 | 17566 B | 第三轮基线（`792a441`） | 异常关断顺序微调完成时 | ❌ 代码已变更 |
@@ -108,7 +108,7 @@ Program Size: Code=17978 RO-data=2042 RW-data=64 ZI-data=3176
 
 ### 3.4 链路演练（`host/monitor_cli.py --demo`，30 帧）
 
-一阶惯性模型合成状态帧 → 真实 `protocol.Parser` → 终端渲染，日志快照见 `docs/evidence/monitor_demo_2026-10-30.txt`。
+一阶惯性模型合成状态帧 → 真实 `protocol.Parser` → 终端渲染，日志快照见 `docs/evidence/2026-10-30/monitor_demo.txt`。
 实测输出节选：
 
 ```

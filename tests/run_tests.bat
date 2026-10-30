@@ -31,6 +31,11 @@ if "%FAILED%"=="1" (
   echo HOST TESTS: SOME FAILED
   exit /b 1
 )
+
+rem ---- 证据快照：把本次日志归档到 docs\evidence\YYYY-MM-DD（tests\*.log 本身已 gitignore） ----
+python "%~dp0snapshot_evidence.py" 2>nul
+if errorlevel 1 py -3 "%~dp0snapshot_evidence.py" 2>nul
+
 echo HOST TESTS: ALL PASS
 exit /b 0
 
