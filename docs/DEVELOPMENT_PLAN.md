@@ -392,6 +392,6 @@ Program Size: Code=17114 RO-data=2042 RW-data=56 ZI-data=3160
 
 **关键的自证**：第 4 条的实现做了反向验证——把超时分支临时改成永不成立，T3 立刻出现 4 项失败，其中 `STOP executed (0)` 正是 A 项描述的后果。这比"写完测试全绿"更能说明测试确实盯着缺陷。
 
-**复测**：Keil 全量 Rebuild 0E0W（Code=18106B / RO=2042B / RW=68B / ZI=3180B）；宿主机 213 项全过（MSVC，四项 C 测试零警告）；`tune_helper --selftest` 8/8；gcc/Linux 侧由评审者复跑到 193 项（C13 这 10 项尚未在 gcc 下跑）。
+**复测**：Keil 全量 Rebuild 0E0W（Code=18106B / RO=2042B / RW=68B / ZI=3180B）；宿主机 213 项全过（MSVC，四项 C 测试零警告）；`tune_helper --selftest` 8/8；gcc/Linux 侧由评审者复跑 **213 项全过**（与 MSVC 结果一致）。
 
 **仍未做**：所有上板项（含 A 项的最终验收脚本 `repro_truncated_frame.py`）；GUI 仍无法在本机开窗（缺 tkinter），本轮新增的诊断按钮只做了语法与 AST 检查。
