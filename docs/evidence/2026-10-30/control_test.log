@@ -90,4 +90,9 @@ C13 STOP keeps the fan while residual heat is above the hysteresis:
   [PASS] fan off after cooling below target+0.5
   [PASS] fan stays off when already cool
   [PASS] still STANDBY
+  [PASS] overtemp -> FAULT with fan on
+  [PASS] ack accepted after cooling
+  [PASS] fan kept on after ACK (still above target+2)
+  [PASS] no heating after ACK
+  [PASS] fan off once back near target
 === ALL PASS: 0 check(s) failed ===

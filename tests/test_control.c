@@ -566,6 +566,20 @@ static void c13_stop_keeps_fan_for_residual_heat(void)
   Control_Tick();
   CHECK(Fan_IsOn() == 0u, "fan stays off when already cool");
   CHECK(Control_Get()->state == CTRL_STANDBY, "still STANDBY");
+
+  /* 故障确认走同一判据：确认时温度仍高于目标（但没到 75℃）→ 风扇不应被关掉 */
+  g_meas = 80.0f;                           /* 超温 -> FAULT，风扇强制开 */
+  Control_Tick();
+  CHECK(Control_Get()->state == CTRL_FAULT && Fan_IsOn() == 1u, "overtemp -> FAULT with fan on");
+
+  g_meas = 60.0f;                           /* 降到目标以上、75℃ 以下 */
+  CHECK(Control_AckFault() == 0u, "ack accepted after cooling");
+  CHECK(Fan_IsOn() == 1u, "fan kept on after ACK (still above target+2)");
+  CHECK(Heater_GetDutyPermille() == 0u, "no heating after ACK");
+
+  g_meas = 45.0f;                           /* 降到目标以内 */
+  Control_Tick();
+  CHECK(Fan_IsOn() == 0u, "fan off once back near target");
 }
 
 int main(void)

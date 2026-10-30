@@ -28,6 +28,9 @@ static ctrl_params_t   s_params;
 
 /* 热失控窗口状态 */
 static uint16_t s_rw_ticks = 0u;
+
+/* 前置声明：Control_Stop()/Control_AckFault() 先于定义处调用它 */
+static void fan_hysteresis(float temp_c);
 static float    s_rw_t0    = 0.0f;
 
 /* 统一的进入故障动作：关加热（逻辑+闸门）、开风扇、锁定、刷新快照 */
@@ -247,7 +250,9 @@ uint8_t Control_AckFault(void)
   s_snap.fault  = CTRL_FAULT_NONE;
   s_snap.state  = CTRL_STANDBY;   /* 只回待机，不自动恢复闭环 */
   Heater_Off();
-  Fan_Off();
+  /* 与 STOP 同一策略（F 项）：确认故障时温度可能仍高于目标（只是没到 75℃），
+     这里也交给迟滞判断，不要机械地关风扇。 */
+  fan_hysteresis(d.temperature_c);
   s_snap.duty   = Heater_GetDuty();
   s_snap.fan_on = Fan_IsOn();
   return 0u;
