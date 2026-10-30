@@ -26,6 +26,7 @@
   *   C10 大热容慢升温 + 周期性 1-tick 抖动：不误报热失控
   *   C11 运行中改目标：热失控窗口证据清零，不被跨目标的旧窗口误判
   *   C12 重发相同目标：不得清窗，热失控仍须被检出（上位机周期同步场景）
+  *   C13 STOP 后的余热管理：加热立即关，风扇按迟滞继续吹到目标+0.5℃ 以内
   ******************************************************************************
   */
 #include <stdio.h>
@@ -534,6 +535,39 @@ static void c12_same_target_resend_keeps_window(void)
   CHECK(Heater_GetDutyPermille() == 0u, "heater off after fault");
 }
 
+/* ============================ C13 STOP 后的余热管理 ============================ */
+static void c13_stop_keeps_fan_for_residual_heat(void)
+{
+  plant_t pl;
+
+  printf("C13 STOP keeps the fan while residual heat is above the hysteresis:\n");
+  reset_all(&pl, 12);                       /* 目标默认 45℃ */
+
+  CHECK(Control_Start() == 0u, "start accepted");
+
+  g_meas = 48.0f;                           /* 模拟刚停机时的余热：> 45+2.0 */
+  Control_Tick();
+  CHECK(Fan_IsOn() == 1u, "fan on while hot in RUNNING");
+
+  CHECK(Control_Stop() == 0u, "stop accepted");
+  CHECK(Heater_GetDutyPermille() == 0u, "heater off immediately after STOP");
+  CHECK(Fan_IsOn() == 1u, "fan NOT killed by STOP (residual-heat policy)");
+
+  g_meas = 46.5f;                           /* 45.5 < T < 47：迟滞带内，应保持 */
+  Control_Tick();
+  CHECK(Fan_IsOn() == 1u, "fan stays on inside the hysteresis band");
+  CHECK(Heater_GetDutyPermille() == 0u, "still no heating in STANDBY");
+
+  g_meas = 45.2f;                           /* < 45+0.5 */
+  Control_Tick();
+  CHECK(Fan_IsOn() == 0u, "fan off after cooling below target+0.5");
+
+  g_meas = 44.8f;                           /* 本来就凉，STOP 不应开风 */
+  Control_Tick();
+  CHECK(Fan_IsOn() == 0u, "fan stays off when already cool");
+  CHECK(Control_Get()->state == CTRL_STANDBY, "still STANDBY");
+}
+
 int main(void)
 {
   printf("=== TempCtrl control tests (host build, tests real control.c + pid.c) ===\n");
@@ -551,6 +585,7 @@ int main(void)
   c10_slow_plant_with_dips_no_false_trip();
   c11_target_change_resets_window();
   c12_same_target_resend_keeps_window();
+  c13_stop_keeps_fan_for_residual_heat();
   printf("=== %s: %d check(s) failed ===\n", g_failed == 0 ? "ALL PASS" : "FAILED", g_failed);
   return g_failed == 0 ? 0 : 1;
 }

@@ -211,7 +211,9 @@ uint8_t Control_Stop(void)
     return 2u;
   }
   Heater_Off();                   /* 逻辑 + 软件输出许可一起关 */
-  Fan_Off();
+  /* 风扇**不在这里关**（F 项策略）：停机后余热仍会让温度上升，
+     立刻停风等于把热量闷在腔体里。保持当前状态，由 STANDBY 的
+     fan_hysteresis() 在下一个 tick 按实际温度决定何时停。 */
   s_snap.duty   = Heater_GetDuty();
   s_snap.fan_on = Fan_IsOn();
   s_snap.state  = CTRL_STANDBY;
@@ -265,6 +267,23 @@ static uint8_t safety_interlock(const Sensor_Data_t *d)
 
 /* ---------------- 周期调度 ---------------- */
 
+/* 风扇迟滞：高于 目标+2.0℃ 开，回落到 目标+0.5℃ 内关。
+   RUNNING 与 STANDBY **共用同一套判据**（健壮性审查 F 项的策略）：
+   停机只关加热，不立刻停风——余热仍会把温度顶上去，立即停风等于把热量
+   闷在腔体里，极端情况能冲到 75℃ 联锁阈值。现在 STANDBY 继续按同一迟滞
+   吹风，等温度回落到目标附近才停，OLED/串口都能看到 FAN 仍为 ON。 */
+static void fan_hysteresis(float temp_c)
+{
+  if (temp_c > s_params.target_c + CTRL_FAN_ON_DELTA_C)
+  {
+    Fan_On();
+  }
+  else if (temp_c < s_params.target_c + CTRL_FAN_OFF_DELTA_C)
+  {
+    Fan_Off();
+  }
+}
+
 void Control_Tick(void)
 {
   Sensor_Data_t d = Sensor_Read();
@@ -287,8 +306,10 @@ void Control_Tick(void)
       {
         break;
       }
-      /* 待机：加热关（风扇状态由 STOP/故障确认时已置于关闭） */
+      /* 待机：加热必关；风扇按与运行期相同的迟滞做**余热管理**（F 项策略）。
+         传感器无效时上面的 interlock 已转 FAULT，走不到这里。 */
       Heater_Off();
+      fan_hysteresis(d.temperature_c);
       s_snap.duty   = Heater_GetDuty();
       s_snap.fan_on = Fan_IsOn();
       break;
@@ -338,15 +359,7 @@ void Control_Tick(void)
                                            模拟模型的温度演化读 Heater_GetDutyPermille() */
       }
 
-      /* 风扇迟滞：高于目标+2.0℃ 开，回落到目标+0.5℃ 内关 */
-      if (d.temperature_c > s_params.target_c + CTRL_FAN_ON_DELTA_C)
-      {
-        Fan_On();
-      }
-      else if (d.temperature_c < s_params.target_c + CTRL_FAN_OFF_DELTA_C)
-      {
-        Fan_Off();
-      }
+      fan_hysteresis(d.temperature_c);
       s_snap.fan_on = Fan_IsOn();
       break;
 

@@ -79,4 +79,15 @@ C12 re-sending the SAME target must not suppress runaway detection:
   [PASS] within the normal 60s window (+ramp)
   [PASS] fault == RUNAWAY (3)
   [PASS] heater off after fault
+C13 STOP keeps the fan while residual heat is above the hysteresis:
+  [PASS] start accepted
+  [PASS] fan on while hot in RUNNING
+  [PASS] stop accepted
+  [PASS] heater off immediately after STOP
+  [PASS] fan NOT killed by STOP (residual-heat policy)
+  [PASS] fan stays on inside the hysteresis band
+  [PASS] still no heating in STANDBY
+  [PASS] fan off after cooling below target+0.5
+  [PASS] fan stays off when already cool
+  [PASS] still STANDBY
 === ALL PASS: 0 check(s) failed ===
