@@ -8,10 +8,14 @@
   *
   * 离散方法（采样周期 Ts，由调用方保证固定且与 pid_init 传入值一致）：
   *   积分（后向矩形）：∫e ≈ Σ e[j]·Ts
-  *   微分（后向差分）：de/dt ≈ (e[k] - e[k-1]) / Ts
+  *   微分（对测量值 + 一阶低通）：
+  *       raw[k] = -(y[k] - y[k-1]) / Ts            （e = r - y，r 不变时 de/dt = -dy/dt）
+  *       d[k]   = d[k-1] + α·(raw[k] - d[k-1])，    α = Ts / (Tf + Ts)
+  *     好处：1) 改设定值时没有微分冲击；2) 复位后首次不会用 prev=0 算出巨大微分；
+  *           3) NTC 量化噪声被低通抑制。
   *
   * 位置式输出：
-  *   u[k] = Kp·e[k] + Ki·Ts·Σe[j] + Kd·(e[k]-e[k-1])/Ts
+  *   u[k] = Kp·e[k] + Ki·Ts·Σe[j] + Kd·d[k]
   *
   * 本工程约定：u 即加热器 PWM 占空比 0~100；Ts = 0.5s（500ms 控制周期）。
   *
@@ -34,6 +38,7 @@ void pid_init(pid_t *p, float kp, float ki, float kd, float ts)
   p->ki = ki;
   p->kd = kd;
   p->ts = ts;
+  p->d_tau = 2.0f;
   pid_reset(p);
   p->out_min  = 0.0f;
   p->out_max  = 100.0f;
@@ -44,7 +49,9 @@ void pid_init(pid_t *p, float kp, float ki, float kd, float ts)
 void pid_reset(pid_t *p)
 {
   p->integral    = 0.0f;
-  p->prev_err    = 0.0f;
+  p->prev_meas   = 0.0f;
+  p->d_state     = 0.0f;
+  p->has_prev    = 0u;
   p->input_fault = 0u;
 }
 
@@ -56,7 +63,7 @@ void pid_reset(pid_t *p)
   */
 float pid_update(pid_t *p, float setpoint, float measurement)
 {
-  float err, d_term, u, integ_cand;
+  float err, d_raw, d_filt, alpha, d_term, u, integ_cand;
 
   /* ---- 1. 异常输入拦截（NaN 用自比较判定，不能写 NaN == NaN） ---- */
   if (setpoint != setpoint || measurement != measurement)
@@ -71,8 +78,18 @@ float pid_update(pid_t *p, float setpoint, float measurement)
 
   err = setpoint - measurement;
 
-  /* ---- 2. 微分项（后向差分） ---- */
-  d_term = p->kd * (err - p->prev_err) / p->ts;
+  /* ---- 2. 微分项（对测量值微分 + 一阶低通） ---- */
+  if (p->has_prev)
+  {
+    d_raw = -(measurement - p->prev_meas) / p->ts;
+  }
+  else
+  {
+    d_raw = 0.0f;                       /* 复位后首次：没有历史，不产生微分冲击 */
+  }
+  alpha  = p->ts / (p->d_tau + p->ts);
+  d_filt = p->d_state + alpha * (d_raw - p->d_state);
+  d_term = p->kd * d_filt;
 
   /* ---- 3. 积分项 + 条件积分抗饱和 ---- */
   integ_cand = p->integral + p->ki * err * p->ts;   /* 候选积分值 */
@@ -109,7 +126,9 @@ float pid_update(pid_t *p, float setpoint, float measurement)
     p->integral = p->int_min;
   }
 
-  p->prev_err    = err;
+  p->prev_meas   = measurement;
+  p->d_state     = d_filt;
+  p->has_prev    = 1u;
   p->input_fault = 0u;
   return u;
 

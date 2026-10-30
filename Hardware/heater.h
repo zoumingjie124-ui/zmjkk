@@ -25,8 +25,10 @@
 #include "main.h"
 
 void    Heater_Init(void);              /* 启动 PWM，占空比 0 且**输出闸门关闭** */
-void    Heater_SetDuty(uint8_t duty);   /* 逻辑占空比 0~100（是否上引脚取决于闸门） */
-uint8_t Heater_GetDuty(void);           /* 逻辑占空比（模拟模型据此演化温度） */
+void     Heater_SetDutyPermille(uint16_t permille);  /* 逻辑占空比 0~1000‰（0.1% 分辨率，是否上引脚取决于闸门） */
+void     Heater_SetDuty(uint8_t duty);               /* 逻辑占空比 0~100%（内部转成 ‰） */
+uint16_t Heater_GetDutyPermille(void);               /* 逻辑占空比（‰，模拟模型据此演化温度） */
+uint8_t  Heater_GetDuty(void);                       /* 逻辑占空比（四舍五入到 %，供显示/协议） */
 
 void    Heater_EnableOutput(uint8_t enable);  /* 软件输出许可（闸门）：0=强制 PA8 低 */
 uint8_t Heater_OutputEnabled(void);

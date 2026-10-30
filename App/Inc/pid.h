@@ -26,7 +26,10 @@ typedef struct
 
   /* 运行状态 */
   float integral;        /* 积分累积项（已含 Ki*Ts 因子） */
-  float prev_err;        /* 上次偏差（微分用） */
+  float prev_meas;       /* 上次测量值（微分用：对测量值微分，设定值阶跃不产生冲击） */
+  float d_state;         /* 微分项低通滤波状态（单位 ℃/s） */
+  float d_tau;           /* 微分低通时间常数 s（默认 2.0，抑制 NTC 量化噪声） */
+  uint8_t has_prev;      /* 0 = 复位后尚无上次测量值：首次计算微分恒为 0，避免启动冲击 */
   uint8_t input_fault;   /* 1 = 上次输入异常（NaN/超界），输出被强制为 0 */
 
   /* 限幅配置 */

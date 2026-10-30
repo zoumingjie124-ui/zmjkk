@@ -21,6 +21,12 @@ test_param.exe > param_test.log 2>&1
 if errorlevel 1 set FAILED=1
 type param_test.log
 
+"%MSVC%\bin\Hostx64\x64\cl.exe" /nologo /utf-8 /W4 /I stubs /I ..\App\Inc /I ..\Hardware test_control.c /Fe:test_control.exe > cl_build_control.log 2>&1
+if errorlevel 1 goto control_build_fail
+test_control.exe > control_test.log 2>&1
+if errorlevel 1 set FAILED=1
+type control_test.log
+
 if "%FAILED%"=="1" (
   echo HOST TESTS: SOME FAILED
   exit /b 1
@@ -31,6 +37,10 @@ exit /b 0
 :pid_build_fail
 echo PID BUILD FAILED
 type cl_build_pid.log
+exit /b 1
+:control_build_fail
+echo CONTROL BUILD FAILED
+type cl_build_control.log
 exit /b 1
 :param_build_fail
 echo PARAM BUILD FAILED

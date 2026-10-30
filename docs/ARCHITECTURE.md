@@ -27,7 +27,7 @@
 │                                  │ 只调 Hardware 接口，不碰寄存器              │
 │  ┌── 硬件抽象层 Hardware/ ───────▼─────────────────────────────────────────┐  │
 │  │  sensor.c  NTC(ADC1_IN0) + 一阶惯性模拟双底层，统一 Sensor_Read()        │  │
-│  │  heater.c  TIM1_CH1 1kHz PWM，占空比 0~100                                │  │
+│  │  heater.c  TIM1_CH1 1kHz PWM，占空比 0~1000‰                              │  │
 │  │  fan.c     PB0 开关（预留 TIM3_CH3 调速）                                 │  │
 │  │  key.c     PB12/13/14 状态机消抖（10ms 节拍，无 Delay）                   │  │
 │  │  oled.c    SSD1306 软件 I2C（PB6/PB7）                                    │  │
@@ -158,10 +158,10 @@ IWDG 复位窗口（0.67~1.33s）内负载仍按最后占空比工作。**真实
 
 | 项 | 数值 | 占比 |
 |----|------|------|
-| Code | 17566 B | 26.8% of 64KB（Code+RO+RW 总计 19656 B，占 Flash 30.0%） |
+| Code | 17950 B | 27.4% of 64KB（Code+RO+RW 总计 20056 B，占 Flash 30.6%） |
 | RO-data | 2042 B | — |
 | RW-data | 48 B | — |
-| ZI-data | 3168 B | 含 RW 总 RAM 3216 B（15.7% of 20KB） |
+| ZI-data | 3176 B | 含 RW 总 RAM 3240 B（15.8% of 20KB） |
 
 ---
 

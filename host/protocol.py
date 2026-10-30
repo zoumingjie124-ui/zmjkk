@@ -49,7 +49,7 @@ ACK_TEXT = {
 }
 
 STATE_NAMES = {0: "INI", 1: "STB", 2: "RUN", 3: "FLT"}
-FAULT_NAMES = {0: "-", 1: "SENSOR", 2: "OVERTEMP"}
+FAULT_NAMES = {0: "-", 1: "SENSOR", 2: "OVERTEMP", 3: "RUNAWAY"}
 
 # 参数合法范围（与固件 control.h 保持一致）
 TARGET_MIN, TARGET_MAX = 0.0, 70.0

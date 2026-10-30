@@ -16,6 +16,8 @@
   *   T2 输出限幅：大误差下输出精确钳在 0/100
   *   T3 积分抗饱和：条件积分冻结 + 积分硬限幅 + 反向误差立即退饱和
   *   T4 异常输入拦截：NaN/超界返回 0 并置故障，内部状态不被污染
+  *   T5 微分作用于测量值：设定值阶跃无微分冲击；复位后首次无启动冲击
+  *   T6 微分低通：测量值单步跳变时微分项被平滑，且稳态下为 0
   ******************************************************************************
   */
 #include <stdio.h>
@@ -183,6 +185,67 @@ static void t4_invalid_input(void)
         "integral resumes normally=%.4f", pid.integral);
 }
 
+/* ============================ T5 微分作用于测量值 ============================ */
+static void t5_derivative_on_measurement(void)
+{
+  pid_t pid;
+  float u0, u1;
+  int k;
+
+  printf("T5 derivative on measurement (no kick on setpoint step / start):\n");
+
+  /* 5a. 稳态后设定值阶跃 +10℃：Kp=2, Ki=0, Kd=10。
+         若 D 作用于误差：u 跳变 = Kp*10 + Kd*10/Ts = 20 + 200 -> 钳到 100；
+         作用于测量值：u 跳变只有 Kp*10 = 20。 */
+  pid_init(&pid, 2.0f, 0.0f, 10.0f, 0.5f);
+  for (k = 0; k < 20; k++)
+  {
+    u0 = pid_update(&pid, 45.0f, 45.0f);
+  }
+  u1 = pid_update(&pid, 55.0f, 45.0f);
+  CHECK(fabsf(u0) < 1e-4f, "steady: u=%.4f ~ 0", u0);
+  CHECK(fabsf(u1 - 20.0f) < 1e-3f, "setpoint step +10C -> u=%.3f == Kp*10 = 20 (no D kick)", u1);
+
+  /* 5b. 复位后第一次计算：测量值 25，目标 45，Kp=0 Ki=0 Kd=1.5。
+         旧实现 prev_err=0 -> D = 1.5*20/0.5 = 60%；现在首次微分恒为 0。 */
+  pid_init(&pid, 0.0f, 0.0f, 1.5f, 0.5f);
+  u1 = pid_update(&pid, 45.0f, 25.0f);
+  CHECK(fabsf(u1) < 1e-6f, "first call after reset: u=%.6f == 0 (no start-up kick)", u1);
+
+  /* 5c. 测量值上升时微分项应为负（刹车），而不是正 */
+  pid_init(&pid, 0.0f, 0.0f, 10.0f, 0.5f);
+  (void)pid_update(&pid, 45.0f, 30.0f);
+  u1 = pid_update(&pid, 45.0f, 31.0f);   /* dy/dt = +2 ℃/s -> D = -Kd*filtered(2) < 0，被下限钳到 0 */
+  CHECK(u1 == 0.0f, "rising measurement -> D brakes (clamped at 0): u=%.3f", u1);
+  CHECK(pid.d_state < 0.0f, "filtered derivative state negative: %.4f", pid.d_state);
+}
+
+/* ============================ T6 微分低通 ============================ */
+static void t6_derivative_filter(void)
+{
+  pid_t pid;
+  float raw, alpha, expected, d1;
+  int k;
+
+  printf("T6 derivative low-pass:\n");
+  pid_init(&pid, 0.0f, 0.0f, 1.0f, 0.5f);
+  pid.out_min = -1000.0f;               /* 测试注入：放开下限以观察负值微分 */
+  pid.out_max = 1000.0f;
+  (void)pid_update(&pid, 45.0f, 30.0f);
+  d1 = pid_update(&pid, 45.0f, 32.0f);  /* 测量值单步跳 +2℃ */
+  raw = -2.0f / 0.5f;                   /* -4 ℃/s */
+  alpha = 0.5f / (pid.d_tau + 0.5f);
+  expected = alpha * raw;               /* 第一拍只吃到 alpha 倍 */
+  CHECK(fabsf(d1 - expected) < 1e-4f, "one-step jump smoothed: D=%.4f == alpha*raw=%.4f (alpha=%.3f)", d1, expected, alpha);
+  CHECK(fabsf(d1) < fabsf(raw), "smaller than the unfiltered %.1f", raw);
+
+  for (k = 0; k < 60; k++)              /* 测量值不再变化 -> 微分项衰减到 0 */
+  {
+    d1 = pid_update(&pid, 45.0f, 32.0f);
+  }
+  CHECK(fabsf(d1) < 1e-3f, "decays to 0 when measurement flat: D=%.6f", d1);
+}
+
 int main(void)
 {
   printf("=== TempCtrl PID unit tests (host build, tests real pid.c) ===\n");
@@ -190,6 +253,8 @@ int main(void)
   t2_output_clamp();
   t3_anti_windup();
   t4_invalid_input();
+  t5_derivative_on_measurement();
+  t6_derivative_filter();
   printf("=== %s: %d check(s) failed ===\n",
          g_failed == 0 ? "ALL PASS" : "FAILED", g_failed);
   return g_failed == 0 ? 0 : 1;

@@ -13,7 +13,7 @@
 #include "heater.h"
 #include "tim.h"
 
-static uint8_t s_duty  = 0;   /* 逻辑占空比（PID 想要的功率） */
+static uint16_t s_permille = 0;   /* 逻辑占空比（‰，0~1000；PID 想要的功率，TIM1 ARR=999 -> 1‰ = 1 个计数） */
 /* 软件输出许可（闸门）：0=强制 CCR=0（上电默认）。
    注意：这只是软件变量，不保证物理断电；CPU 跑飞靠 IWDG，物理断电靠栅极下拉/串联温控开关。 */
 static uint8_t s_hw_en = 0;
@@ -25,15 +25,15 @@ static void hw_apply(void)
 
   if (s_hw_en)
   {
-    ccr = (uint32_t)s_duty * 10u;   /* ARR=999：1% = 10 个计数 */
+    ccr = (uint32_t)s_permille;     /* ARR=999：1‰ = 1 个计数，0.1% 分辨率 */
   }
   __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, ccr);
 }
 
 void Heater_Init(void)
 {
-  s_duty  = 0u;
-  s_hw_en = 0u;                     /* 上电绝不输出 */
+  s_permille = 0u;
+  s_hw_en    = 0u;                  /* 上电绝不输出 */
   hw_apply();
   if (HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1) != HAL_OK)
   {
@@ -41,19 +41,33 @@ void Heater_Init(void)
   }
 }
 
+void Heater_SetDutyPermille(uint16_t permille)
+{
+  if (permille > 1000u)
+  {
+    permille = 1000u;               /* 限幅：调用方传错也不能超过 100% */
+  }
+  s_permille = permille;
+  hw_apply();
+}
+
 void Heater_SetDuty(uint8_t duty)
 {
   if (duty > 100u)
   {
-    duty = 100u;                    /* 限幅：调用方传错也不能超过 100% */
+    duty = 100u;
   }
-  s_duty = duty;
-  hw_apply();
+  Heater_SetDutyPermille((uint16_t)((uint16_t)duty * 10u));
+}
+
+uint16_t Heater_GetDutyPermille(void)
+{
+  return s_permille;
 }
 
 uint8_t Heater_GetDuty(void)
 {
-  return s_duty;
+  return (uint8_t)((s_permille + 5u) / 10u);   /* 四舍五入到 %，供显示/协议（协议帧是 u8 百分比） */
 }
 
 void Heater_EnableOutput(uint8_t enable)
@@ -69,8 +83,8 @@ uint8_t Heater_OutputEnabled(void)
 
 void Heater_Off(void)
 {
-  s_duty  = 0u;
-  s_hw_en = 0u;
+  s_permille = 0u;
+  s_hw_en    = 0u;
   hw_apply();
 }
 

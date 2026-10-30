@@ -9,8 +9,11 @@
   *   任意状态 ──联锁触发──> FAULT(锁定) ──Control_AckFault()──> STANDBY
   *
   * 安全联锁（每 tick 最先检查，优先级高于 PID）：
-  *   sensor.is_valid == 0 / temp > 75℃ / PID input_fault
+  *   sensor.is_valid == 0 / temp > 75℃ / PID input_fault / 热失控判据
   *   -> Heater_Off() + Fan_On() + 锁定 FAULT
+  *
+  * 热失控判据（RUNNING）：占空比 >= 80% 且离目标 > 3℃ 连续 60s，期间温升 < 2℃，
+  *   说明"推得很用力但温度不动"——NTC 脱落读室温时 75℃ 上限永远触发不了，靠它兜底。
   ******************************************************************************
   */
 #include "control.h"
@@ -22,6 +25,64 @@
 static pid_t           s_pid;
 static ctrl_snapshot_t s_snap;
 static ctrl_params_t   s_params;
+
+/* 热失控窗口状态 */
+static uint16_t s_rw_ticks = 0u;
+static float    s_rw_t0    = 0.0f;
+
+/* 统一的进入故障动作：关加热（逻辑+闸门）、开风扇、锁定、刷新快照 */
+static void enter_fault(ctrl_fault_t f)
+{
+  Heater_Off();
+  Fan_On();
+  s_snap.state  = CTRL_FAULT;
+  s_snap.fault  = f;
+  s_snap.duty   = Heater_GetDuty();
+  s_snap.fan_on = Fan_IsOn();
+}
+
+/* 返回 1 = 判定热失控。duty_permille 是本周期 PID 想要的功率。 */
+static uint8_t runaway_check(float temp_c, uint16_t duty_permille)
+{
+  if (duty_permille >= CTRL_RUNAWAY_DUTY_PERMILLE &&
+      (s_params.target_c - temp_c) > CTRL_RUNAWAY_MIN_ERR_C)
+  {
+    if (s_rw_ticks == 0u)
+    {
+      s_rw_t0 = temp_c;                 /* 窗口起点 */
+    }
+    s_rw_ticks++;
+    if (s_rw_ticks >= CTRL_RUNAWAY_WINDOW_TICKS)
+    {
+      if ((temp_c - s_rw_t0) < CTRL_RUNAWAY_MIN_RISE_C)
+      {
+        return 1u;                      /* 60s 内几乎没涨 */
+      }
+      s_rw_ticks = 0u;                  /* 升温正常，开新窗口 */
+    }
+  }
+  else
+  {
+    /* 漏桶衰减：单个 tick 条件不成立只扣 1 个 tick 的证据，不整窗清零。
+       大热容对象在 PID 调节中占空比偶尔掉到 79.9%，若清零则窗口一直从头计时，
+       热失控可能永远触发不了。t0 不随之更新 —— 意味着判定时间跨度变长，
+       对真实失控只会"更晚发现"，不会增加误报。 */
+    if (s_rw_ticks > CTRL_RUNAWAY_DECAY_TICKS)
+    {
+      s_rw_ticks = (uint16_t)(s_rw_ticks - CTRL_RUNAWAY_DECAY_TICKS);
+    }
+    else
+    {
+      s_rw_ticks = 0u;                  /* 归零后，下一个合格 tick 会重新取 t0 */
+    }
+  }
+  return 0u;
+}
+
+uint8_t Control_CanSaveParams(void)
+{
+  return (s_snap.state == CTRL_STANDBY) ? 1u : 0u;
+}
 
 void Control_Init(void)
 {
@@ -128,7 +189,8 @@ uint8_t Control_Start(void)
     return 3u;                    /* 传感器无效或超温，拒绝启动并锁定 */
   }
 
-  pid_reset(&s_pid);              /* 每次启动清零积分，避免沿用旧累积 */
+  pid_reset(&s_pid);              /* 每次启动清零积分/微分状态，避免沿用旧累积 */
+  s_rw_ticks   = 0u;
   s_snap.state = CTRL_RUNNING;
   return 0u;
 }
@@ -186,12 +248,7 @@ static uint8_t safety_interlock(const Sensor_Data_t *d)
 {
   if (!d->is_valid || d->temperature_c > CTRL_SAFE_LIMIT_C)
   {
-    Heater_Off();
-    Fan_On();
-    s_snap.state  = CTRL_FAULT;
-    s_snap.fault  = (!d->is_valid) ? CTRL_FAULT_SENSOR : CTRL_FAULT_OVERTEMP;
-    s_snap.duty   = Heater_GetDuty();
-    s_snap.fan_on = Fan_IsOn();
+    enter_fault((!d->is_valid) ? CTRL_FAULT_SENSOR : CTRL_FAULT_OVERTEMP);
     return 1u;
   }
   return 0u;
@@ -242,15 +299,21 @@ void Control_Tick(void)
 
         if (s_pid.input_fault)
         {
-          Heater_Off();
-          Fan_On();
-          s_snap.state  = CTRL_FAULT;
-          s_snap.fault  = CTRL_FAULT_SENSOR;
-          s_snap.duty   = Heater_GetDuty();
-          s_snap.fan_on = Fan_IsOn();
+          enter_fault(CTRL_FAULT_SENSOR);
           break;
         }
-        Heater_SetDuty((uint8_t)u);     /* SetDuty 内部 0~100 限幅 */
+
+        /* PID 输出 0~100.0% -> ‰（四舍五入，0.1% 分辨率；SetDutyPermille 内部再限幅） */
+        {
+          uint16_t permille = (uint16_t)(u * 10.0f + 0.5f);
+
+          if (runaway_check(d.temperature_c, permille))
+          {
+            enter_fault(CTRL_FAULT_RUNAWAY);
+            break;
+          }
+          Heater_SetDutyPermille(permille);
+        }
         s_snap.duty = Heater_GetDuty(); /* 逻辑占空比（模拟模型据此演化） */
       }
 

@@ -1,0 +1,69 @@
+=== TempCtrl control tests (host build, tests real control.c + pid.c) ===
+C1 closed loop, delay=6s sensor-lag=3s (default PID 8/0.1/1.5, 25C -> 45C, 900s):
+  [PASS] start accepted
+  maxT=45.10C overshoot=0.10C end_err=0.00C last |err|>1C at t=158s duty range [45,100]%
+  [PASS] no fault during normal heat-up (no false runaway)
+  [PASS] duty always in [0,100]
+  [PASS] overshoot 0.10C < 5C (record, retune on real hardware)
+  [PASS] settled: |err|=0.00C < 1C at 900s
+C1b sensitivity of default PID to plant dynamics (record only):
+  delay= 6s tau=60s sensor_lag= 3s : overshoot= 0.10C undershoot_after_peak= 0.10C end_err= 0.00C fault=0
+  [PASS] no spurious fault (case 0)
+  delay=10s tau=40s sensor_lag= 5s : overshoot= 0.10C undershoot_after_peak= 0.10C end_err= 0.00C fault=0
+  [PASS] no spurious fault (case 1)
+  delay=15s tau=30s sensor_lag= 8s : overshoot= 3.10C undershoot_after_peak= 9.40C end_err=-2.30C fault=0
+  [PASS] no spurious fault (case 2)
+  delay=20s tau=30s sensor_lag=10s : overshoot= 4.20C undershoot_after_peak=11.00C end_err=-2.30C fault=0
+  [PASS] no spurious fault (case 3)
+C1c identified PI (Kp=1.871 Ki=0.0592 Kd=0) on the harsh plant:
+  overshoot=1.10C undershoot_after_peak=0.20C end_err=0.00C
+  [PASS] no fault
+  [PASS] overshoot 1.10C < 3C
+  [PASS] settled: |err|=0.00C < 0.5C
+C2 runaway: sensor detached from the start (reads ambient):
+  [PASS] start accepted (reading looks valid)
+  [PASS] fault raised (tick 119 = 60s)
+  [PASS] within window+2 ticks (<= 61s)
+  [PASS] fault == RUNAWAY (3)
+  [PASS] heater logic 0 and gate closed
+  [PASS] fan forced on
+C3 runaway: sensor falls off after reaching target:
+  [PASS] still RUNNING at steady state (T=45.0C)
+  [PASS] fault raised 60s after detach
+  [PASS] detected within 200s (window 60s + PID ramp)
+  [PASS] fault == RUNAWAY (3)
+  [PASS] heater off
+C4 no false runaway on slow-but-healthy heating (delay 20s, 30C -> 60C target):
+  [PASS] no fault in 1200s (T=60.0C)
+C5 overtemp (>75C):
+  [PASS] FAULT_OVERTEMP in the same tick (state=3 fault=2)
+  [PASS] heater off, gate closed
+  [PASS] fan on
+  [PASS] latched: stays FAULT after temperature recovers
+  [PASS] ack -> STANDBY (no auto-restart)
+C6 sensor invalid:
+  [PASS] Start rejected with invalid sensor (ret 3)
+  [PASS] FAULT_SENSOR latched
+  [PASS] ack refused while sensor still invalid
+  [PASS] fan stays on (not switched off by refused ack)
+  [PASS] ack accepted after sensor recovers
+  [PASS] start accepted again
+C7 flash save gate:
+  [PASS] allowed in STANDBY
+  [PASS] refused in RUNNING
+  [PASS] refused in FAULT
+C8 simulated data source never opens the output gate:
+  [PASS] gate closed in SIM mode
+  [PASS] logic duty still computed (1000 permille)
+C9 runaway window: one-tick condition dip must decay, not reset:
+  [PASS] start accepted
+  [PASS] evidence accumulated (100 ticks)
+  [PASS] dip decays evidence by 1, not reset (100 -> 99)
+  [PASS] fault still raised after the dip (tick 20)
+  [PASS] raised without restarting a full window (<=20s)
+  [PASS] fault == RUNAWAY (3)
+C10 slow plant (tau_nat=240s) with periodic one-tick dips: no false runaway:
+  [PASS] start accepted
+  [PASS] no false runaway within 300s
+  [PASS] still heating (T=35.7C)
+=== ALL PASS: 0 check(s) failed ===

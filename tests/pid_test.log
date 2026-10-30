@@ -25,4 +25,14 @@ T4 invalid input interception:
   [PASS] fault cleared after valid input, fault=0
   [PASS] recovered output u=42.8 in [0,100]
   [PASS] integral resumes normally=2.7500
+T5 derivative on measurement (no kick on setpoint step / start):
+  [PASS] steady: u=0.0000 ~ 0
+  [PASS] setpoint step +10C -> u=20.000 == Kp*10 = 20 (no D kick)
+  [PASS] first call after reset: u=0.000000 == 0 (no start-up kick)
+  [PASS] rising measurement -> D brakes (clamped at 0): u=0.000
+  [PASS] filtered derivative state negative: -0.4000
+T6 derivative low-pass:
+  [PASS] one-step jump smoothed: D=-0.8000 == alpha*raw=-0.8000 (alpha=0.200)
+  [PASS] smaller than the unfiltered -4.0
+  [PASS] decays to 0 when measurement flat: D=-0.000001
 === ALL PASS: 0 check(s) failed ===

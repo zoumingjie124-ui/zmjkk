@@ -145,9 +145,16 @@ void Menu_Tick(void)
   }
   if (e2 == KEY_EVENT_LONG)
   {
-    const ctrl_params_t *p = Control_GetParams();
-    uint8_t ret = Param_SaveValues(p->target_c, p->kp, p->ki, p->kd);
-    msg_set(ret == 0u ? "SAVED OK" : "SAVE FAIL");
+    if (!Control_CanSaveParams())
+    {
+      msg_set("STOP FIRST");          /* Flash 擦写会停顿 CPU，运行/故障时禁止 */
+    }
+    else
+    {
+      const ctrl_params_t *p = Control_GetParams();
+      uint8_t ret = Param_SaveValues(p->target_c, p->kp, p->ki, p->kd);
+      msg_set(ret == 0u ? "SAVED OK" : "SAVE FAIL");
+    }
   }
 
   /* ---- KEY3：步进调整 ---- */

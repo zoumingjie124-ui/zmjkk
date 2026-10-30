@@ -40,7 +40,7 @@
 | 0x04 | STOP | 无 | 0x84 | u8 状态码 |
 | 0x05 | ACK_FAULT | 无 | 0x85 | u8 状态码 |
 | 0x06 | SET_PID | f32 kp + f32 ki + f32 kd | 0x86 | u8 状态码 |
-| 0x07 | SAVE_PARAMS | 无 | 0x87 | u8 状态码 |
+| 0x07 | SAVE_PARAMS | 无 | 0x87 | u8 状态码（**仅 STANDBY 允许**；RUNNING/FAULT 返回 4） |
 | 0x08 | GET_PARAMS | 无 | 0x88 | f32 target + kp + ki + kd（16B） |
 | 0x09 | GET_DIAG | 无 | 0x89 | 诊断帧 8B（§3.1） |
 | 0x7F | NACK | u8 错误码 | — | 由下位机主动发出 |
@@ -73,7 +73,7 @@
 | 9 | u8 | fan | 0=关 1=开 |
 | 10 | u8 | state | 0=INI 1=STB 2=RUN 3=FLT |
 | 11 | u8 | sim | **1=SIM 模拟数据源，0=REAL 真实传感器** |
-| 12 | u8 | fault | 0=无 1=传感器故障 2=超温 |
+| 12 | u8 | fault | 0=无 1=传感器故障 2=超温 3=热失控（高功率输出但温度不涨：传感器脱落/加热回路异常） |
 | 13 | f32 | kp | 当前 Kp |
 | 17 | f32 | ki | 当前 Ki |
 | 21 | f32 | kd | 当前 Kd |

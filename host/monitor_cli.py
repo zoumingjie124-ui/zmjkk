@@ -5,6 +5,8 @@
     python host/monitor_cli.py --demo             # 无硬件演示：合成状态帧跑通解析链路
     python host/monitor_cli.py --port COM5 --cmd target=48.0
                                                   # 连上后下发一条指令再监视
+    python host/monitor_cli.py --port COM5 --csv run1.csv
+                                                  # 同时把状态帧记录成 CSV（整定数据）
 
 注意：本工具与 app_gui.py 共用 protocol.py，协议行为完全一致。
 """
@@ -12,6 +14,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import random
 import struct
 import sys
@@ -68,13 +71,22 @@ def run_demo(seconds: float = 6.0) -> int:
     return 0
 
 
-def run_serial(port: str, baud: int, one_cmd: str | None) -> int:
+def run_serial(port: str, baud: int, one_cmd: str | None, csv_path: str | None = None) -> int:
     if serial is None:
         print("需要 pyserial：pip install pyserial")
         return 1
     ser = serial.Serial(port, baud, timeout=0.2)
     parser = P.Parser()
     rx = 0
+    csv_file = None
+    writer = None
+    t_start = time.time()
+    if csv_path:
+        # 整定用的原始数据：time_s,temp_c,target_c,duty_pct,state,fault（供 host/tune_helper.py 读取）
+        csv_file = open(csv_path, "w", newline="", encoding="utf-8")
+        writer = csv.writer(csv_file)
+        writer.writerow(["time_s", "temp_c", "target_c", "duty_pct", "state", "fault"])
+        print(f"logging status frames to {csv_path}")
     try:
         if one_cmd:
             key, _, val = one_cmd.partition("=")
@@ -94,7 +106,12 @@ def run_serial(port: str, baud: int, one_cmd: str | None) -> int:
             rx += len(chunk)
             for f in parser.feed(chunk):
                 if f.cmd == (P.CMD_GET_STATUS | P.RESP_FLAG):
-                    print(render(P.parse_status(f.payload), rx, parser.crc_errors))
+                    st = P.parse_status(f.payload)
+                    print(render(st, rx, parser.crc_errors))
+                    if writer is not None:
+                        writer.writerow([f"{time.time() - t_start:.2f}", f"{st['temp']:.3f}",
+                                         f"{st['target']:.2f}", st["duty"], st["state"], st["fault"]])
+                        csv_file.flush()
                 elif f.cmd == (P.CMD_GET_PARAMS | P.RESP_FLAG):
                     print("PARAMS", P.parse_params(f.payload))
                 elif f.cmd == P.CMD_NACK:
@@ -105,6 +122,8 @@ def run_serial(port: str, baud: int, one_cmd: str | None) -> int:
         print("\nbye")
     finally:
         ser.close()
+        if csv_file is not None:
+            csv_file.close()
     return 0
 
 
@@ -114,6 +133,7 @@ def main() -> int:
     ap.add_argument("--baud", type=int, default=115200)
     ap.add_argument("--cmd")
     ap.add_argument("--demo", action="store_true")
+    ap.add_argument("--csv", help="把状态帧记录成 CSV（升温曲线/整定数据）")
     a = ap.parse_args()
 
     if a.demo:
@@ -121,7 +141,7 @@ def main() -> int:
     if not a.port:
         ap.print_help()
         return 1
-    return run_serial(a.port, a.baud, a.cmd)
+    return run_serial(a.port, a.baud, a.cmd, a.csv)
 
 
 if __name__ == "__main__":

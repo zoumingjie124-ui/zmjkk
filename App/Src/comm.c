@@ -254,6 +254,7 @@ static void handle_frame(uint8_t cmd, const uint8_t *pl, uint8_t len)
     {
       const ctrl_params_t *p = Control_GetParams();
       if (len != 0u) { send_ack(cmd, ACK_LEN_ERR); break; }
+      if (!Control_CanSaveParams()) { send_ack(cmd, ACK_STATE_ERR); break; }   /* 仅 STANDBY 允许写 Flash */
       status = Param_SaveValues(p->target_c, p->kp, p->ki, p->kd);
       send_ack(cmd, (uint8_t)(status == 0u ? ACK_OK : ACK_FLASH_ERR));
       break;

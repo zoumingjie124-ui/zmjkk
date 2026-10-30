@@ -114,7 +114,7 @@ static void sim_update(void)
   }
 
   gain   = Fan_IsOn() ? (SIM_HEAT_GAIN * SIM_FAN_DERATE) : SIM_HEAT_GAIN;
-  steady = SIM_AMBIENT_C + gain * ((float)Heater_GetDuty() / 100.0f);
+  steady = SIM_AMBIENT_C + gain * ((float)Heater_GetDutyPermille() / 1000.0f);
   tau    = Fan_IsOn() ? SIM_TAU_FAN : SIM_TAU_NATURAL;
 
   s_sim_temp += (steady - s_sim_temp) * (dt_s / tau);
