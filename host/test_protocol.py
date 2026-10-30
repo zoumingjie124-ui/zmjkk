@@ -210,6 +210,30 @@ def t10_command_vectors():
           f"SET_PID payload={vals[0]:.2f}/{vals[1]:.2f}/{vals[2]:.2f}")
 
 
+def t11_diag():
+    section("T11 GET_DIAG request/response:")
+    req = P.build_get_diag()
+    check(len(req) == 6 and req[2] == P.CMD_GET_DIAG, f"diag request len={len(req)} cmd=0x{req[2]:02X}")
+    check(req[2] == 0x09 and req[3] == 0, "cmd 0x09 with empty payload")
+
+    resp = P.build_frame(P.CMD_GET_DIAG | P.RESP_FLAG, struct.pack("<II", 7, 123456))
+    p = P.Parser()
+    out = p.feed(resp)
+    check(len(out) == 1, "diag response parses")
+    d = P.parse_diag(out[0].payload)
+    check(d["overflow"] == 7, f"overflow={d['overflow']}")
+    check(d["rx_bytes"] == 123456, f"rx_bytes={d['rx_bytes']}")
+    check(P.parse_diag(struct.pack("<II", 0, 0))["overflow"] == 0, "zero overflow is a dict, not a bool")
+
+    # 边界：载荷长度不对必须抛错，不能静默返回半截数据
+    for bad_len in (0, 4, 7, 9, 12):
+        try:
+            P.parse_diag(b"\x00" * bad_len)
+            check(False, f"parse_diag({bad_len}B) should raise")
+        except ValueError:
+            check(True, f"parse_diag({bad_len}B) raises ValueError")
+
+
 def main() -> int:
     lines.append("=== TempCtrl protocol codec tests ===")
     t1_crc()
@@ -222,6 +246,7 @@ def main() -> int:
     t8_range_validation()
     t9_fuzz()
     t10_command_vectors()
+    t11_diag()
     lines.append(f"=== {'ALL PASS' if failed == 0 else 'FAILED'}: "
                  f"{checks - failed}/{checks} checks passed ===")
     text = "\n".join(lines)

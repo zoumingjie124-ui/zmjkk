@@ -28,6 +28,7 @@ BASE_SOURCES = [
     ("tests/pid_test.log", "pid_test.log"),
     ("tests/param_test.log", "param_test.log"),
     ("tests/control_test.log", "control_test.log"),
+    ("tests/comm_test.log", "comm_test.log"),
 ]
 
 EXTRA_SOURCES = [

@@ -20,6 +20,8 @@ run() {  # run <name> <log> <extra include flags...>
 run test_pid     "$OUT/pid_test.log"     -I ../App/Inc
 run test_param   "$OUT/param_test.log"   -I ../App/Inc
 run test_control control_test.log        -I stubs -I ../App/Inc -I ../Hardware
+# comm.c 经 stubs/usart.h 遮蔽真 usart.h（后者会把 HAL 头拉进来）
+run test_comm    comm_test.log           -I stubs -I ../App/Inc -I ../Hardware
 
 if command -v python3 >/dev/null 2>&1; then
   python3 -I ../host/tune_helper.py --selftest || fail=1

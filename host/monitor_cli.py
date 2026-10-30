@@ -63,6 +63,14 @@ def run_demo(seconds: float = 6.0) -> int:
             crc_err_seen = parser.crc_errors
         for f in frames:
             print(render(P.parse_status(f.payload), len(payload) * (n + 1), crc_err_seen))
+
+        # 每 15 帧演示一次诊断帧解析（0x89：溢出计数 + 累计接收字节）
+        if n % 15 == 14:
+            dpl = struct.pack("<II", 0, len(payload) * (n + 1))
+            for f in parser.feed(P.build_frame(P.CMD_GET_DIAG | P.RESP_FLAG, dpl)):
+                d = P.parse_diag(f.payload)
+                print(f"DIAG overflow={d['overflow']} rx_bytes={d['rx_bytes']}")
+
         n += 1
         time.sleep(0.2)
 
@@ -78,6 +86,7 @@ def run_serial(port: str, baud: int, one_cmd: str | None, csv_path: str | None =
     ser = serial.Serial(port, baud, timeout=0.2)
     parser = P.Parser()
     rx = 0
+    last_diag = 0.0          # 上次发 GET_DIAG 的时刻（诊断每 5s 拉一次）
     csv_file = None
     writer = None
     t_start = time.time()
@@ -100,6 +109,11 @@ def run_serial(port: str, baud: int, one_cmd: str | None, csv_path: str | None =
             elif key == "ack":
                 ser.write(P.build_simple(P.CMD_ACK_FAULT)); print(">> ACK_FAULT")
         while True:
+            # 周期性拉诊断：溢出计数只有主动问才拿得到（固件不主动上报）
+            if time.time() - last_diag >= 5.0:
+                last_diag = time.time()
+                ser.write(P.build_get_diag())
+
             chunk = ser.read(64)
             if not chunk:
                 continue
@@ -114,6 +128,10 @@ def run_serial(port: str, baud: int, one_cmd: str | None, csv_path: str | None =
                         csv_file.flush()
                 elif f.cmd == (P.CMD_GET_PARAMS | P.RESP_FLAG):
                     print("PARAMS", P.parse_params(f.payload))
+                elif f.cmd == (P.CMD_GET_DIAG | P.RESP_FLAG):
+                    d = P.parse_diag(f.payload)
+                    warn = "  <-- 曾有溢出丢字节" if d["overflow"] else ""
+                    print(f"DIAG overflow={d['overflow']} rx_bytes={d['rx_bytes']}{warn}")
                 elif f.cmd == P.CMD_NACK:
                     print("NACK", P.ACK_TEXT.get(f.payload[0] if f.payload else 0xFF))
                 elif f.is_response:

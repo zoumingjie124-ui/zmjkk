@@ -73,4 +73,10 @@ C11 target change clears runaway evidence (no cross-setpoint window):
   [PASS] window cleared on setpoint change (0)
   [PASS] no fault before the fresh window completes
   [PASS] real runaway still detected after reset (3)
+C12 re-sending the SAME target must not suppress runaway detection:
+  [PASS] start accepted
+  [PASS] fault raised despite periodic same-target commands (tick 119)
+  [PASS] within the normal 60s window (+ramp)
+  [PASS] fault == RUNAWAY (3)
+  [PASS] heater off after fault
 === ALL PASS: 0 check(s) failed ===

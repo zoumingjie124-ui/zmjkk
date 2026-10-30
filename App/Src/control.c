@@ -118,13 +118,17 @@ uint8_t Control_SetTarget(float target_c)
   {
     return 1u;
   }
+  /* 只在目标**数值真的变了**时才清窗：上位机/脚本周期性重发同一个目标是正常用法，
+     若每次调用都清，热失控判据会被一条重复指令永久压住（C12 复现）。
+     判定前提变了才需要清：旧目标下攒了 55s 的窗口若在新目标上继续计时，
+     可能在 5s 后用跨目标的时间窗误报（第四轮审查 #1）。 */
+  if (target_c != s_params.target_c)
+  {
+    s_rw_ticks = 0u;
+  }
+
   s_params.target_c = target_c;
   s_snap.target_c   = target_c;
-
-  /* 目标变了，"该加热却没升温"的判定前提也变了：清掉已累计的证据，
-     否则旧目标下攒了 55s 的窗口会在新目标上继续计时，可能在 5s 后
-     用一个跨目标的时间窗误报热失控（第四轮审查 #1）。 */
-  s_rw_ticks = 0u;
   return 0u;
 }
 

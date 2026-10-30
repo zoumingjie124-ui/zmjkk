@@ -1,0 +1,26 @@
+=== TempCtrl comm parser tests (host build, real comm.c) ===
+T1 normal GET_STATUS frame:
+  [PASS] got 0x81 response (at 0)
+  [PASS] status payload len=25
+T2 fragment gap 40ms (< timeout) must still assemble:
+  [PASS] SET_TARGET executed once (1)
+  [PASS] target=45.00
+  [PASS] got ACK 0x82
+T3 [A-fix] half frame + timeout + then STOP must execute STOP:
+  [PASS] stuck in PS_PAYLOAD (state=4)
+  [PASS] parser reset after gap timeout (state=0)
+  [PASS] STOP executed (1)
+  [PASS] got ACK 0x84
+  [PASS] no NACK (frame was not swallowed)
+T4 gap boundary: 49ms keeps state, 51ms resets:
+  [PASS] 49ms: still waiting (state=4)
+  [PASS] 51ms: reset (state=0)
+T5 GET_DIAG returns overflow/rx counters:
+  [PASS] got 0x89 diag response (at 0)
+  [PASS] diag payload len=8
+  [PASS] overflow=7
+  [PASS] rx_bytes=1240
+T6 payload frame after timeout parses payload correctly:
+  [PASS] SET_TARGET executed once (1)
+  [PASS] target=50.00 (not corrupted by the leftover bytes)
+=== ALL PASS: 0 check(s) failed ===

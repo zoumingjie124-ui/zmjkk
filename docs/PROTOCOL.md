@@ -26,9 +26,10 @@
 | 帧总长 | `6 + LEN` 字节 |
 | 应答超时（上位机） | 建议 300ms，超时重发，连续 3 次判链路故障 |
 
-已知限制：
+已知限制与缓解：
 1. 载荷/CRC 中出现 `AA 55` 且前一帧被截断时，最坏情况丢弃当前帧，下一帧自动恢复（解析器逐字节重同步，已在 T6 测试覆盖）。
-2. **帧内无字节间隔超时**：一帧丢字节后解析器会停在 `PAYLOAD` 无限等待，随后那条命令可能被吞掉（详见 `docs/PROTOCOL_ROBUSTNESS_REVIEW.md` A 项）。上板可用 `host/repro_truncated_frame.py --port COMx` 复现；修复后判据是该脚本不再观察到 `NACK(1)`。
+2. ~~帧内无字节间隔超时~~ —— **已修复（2026-10-30）**：解析器现在有 **50ms 帧内字节间隔超时**，半帧超时后被静默丢弃并复位，不会再吞掉后续命令（包括 STOP）。固件侧回归 `tests/test_comm.c` T3/T4/T6；上板验收用 `host/repro_truncated_frame.py --port COMx`，判据是不再观察到 `NACK(1)`。详见 `docs/PROTOCOL_ROBUSTNESS_REVIEW.md` A 项。
+3. 溢出计数**需要主动询问**（`0x09 GET_DIAG`），固件不主动上报，避免给正常链路增加流量。
 
 ---
 
@@ -126,14 +127,25 @@ python host/app_gui.py
 
 ### 终端监控（无 GUI 环境）
 ```bash
-python host/monitor_cli.py --port COM5              # 实时表格
+python host/monitor_cli.py --port COM5              # 实时表格（每 5s 自动拉一次诊断）
 python host/monitor_cli.py --port COM5 --cmd target=48.0
-python host/monitor_cli.py --demo                    # 无硬件跑通解析链路
+python host/monitor_cli.py --demo                    # 无硬件跑通解析链路（含诊断帧）
 ```
+
+诊断行形如 `DIAG overflow=0 rx_bytes=12345`；`overflow > 0` 会追加"曾有溢出丢字节"告警，说明环满过（主循环被长时间阻塞或线路全速灌包）。
+
+### Python 侧 API（`host/protocol.py`）
+
+| 接口 | 用途 |
+|------|------|
+| `build_get_diag()` | 组 0x09 请求帧（6 字节） |
+| `parse_diag(payload)` | 解析 0x89 载荷 → `{"overflow": int, "rx_bytes": int}`；长度≠8 抛 `ValueError` |
+| `build_set_target / build_set_pid / build_simple` | 其余命令组帧 |
+| `parse_status / parse_params` | 载荷解码 |
 
 ### 协议自动化测试
 ```bash
-python host/test_protocol.py     # 46 项检查，含 CRC/分片/坏帧/越界/模糊测试
+python host/test_protocol.py     # 57 项检查，含 CRC/分片/坏帧/越界/模糊/诊断帧
 ```
 
 ---

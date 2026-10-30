@@ -48,6 +48,16 @@ static uint8_t map_ctrl_status(uint8_t st)
 #define MAX_PAYLOAD     32u
 #define REPORT_PERIOD_MS 200u
 
+/* 帧内字节间隔超时（健壮性审查 A 项的修复）。
+   背景：解析器原来没有任何"帧内超时"。一帧若丢了几个字节，状态机会停在
+   PS_PAYLOAD 一直等下个字节，此后到达的合法帧（包括 STOP）会被当成残余载荷
+   吞进当前帧，最后只回一个 CRC 错误 —— 命令丢失，最坏情况下 STOP 失效。
+   取值依据：115200 8N1 每字节约 87µs，最长帧 6+32=38 字节 ≈ 3.3ms；
+   分片发送的间隙通常 <5ms。50ms 既留了 15 倍余量，又远小于上位机的 300ms 重发超时。
+   超时后**静默丢弃半帧、回到 H1**（不发 NACK）：此时上位机正在等响应，
+   多一条 NACK 只会和新帧交错，反而更难处理；丢失由上位机超时重发兜底。 */
+#define FRAME_GAP_TIMEOUT_MS  50u
+
 /* 一次 tick 的接收消化上限。两个上限各管一件事：
    字节数 = 环形缓冲容量 128B，10ms 时基下等于 12.8KB/s，刚好盖住 115200 8N1 的
    11.5KB/s（原来的 64B 只有 6.4KB/s，全速灌包必然溢出丢字节）。
@@ -75,6 +85,7 @@ static uint8_t  s_idx;
 static uint8_t  s_payload[MAX_PAYLOAD];
 static uint16_t s_crc_rx;
 static uint32_t s_last_report_ms;
+static uint32_t s_last_byte_ms;      /* 最近一次收到字节的时刻（帧内超时判据） */
 
 /* ---------------- CRC16 / 字节序 ---------------- */
 
@@ -367,6 +378,7 @@ void Comm_Init(void)
 {
   parser_reset();
   s_last_report_ms = HAL_GetTick();
+  s_last_byte_ms   = HAL_GetTick();
 }
 
 void Comm_Tick(void)
@@ -384,6 +396,20 @@ void Comm_Tick(void)
          Usart_ReadByte(&b))
   {
     parser_feed(b);
+    s_last_byte_ms = HAL_GetTick();    /* 每收到一个字节就刷新帧内计时 */
+  }
+
+  /* 帧内字节间隔超时：半帧卡住就丢弃，避免"吞掉后续命令"。
+     判定放在排空循环之后，且**重新取一次 now** —— 循环里可能已过几毫秒，
+     用循环前的旧 now 与最新的 s_last_byte_ms 相减会得到下溢的巨大值。 */
+  if (s_ps != PS_H1)
+  {
+    uint32_t now2 = HAL_GetTick();
+
+    if ((now2 - s_last_byte_ms) >= FRAME_GAP_TIMEOUT_MS)
+    {
+      parser_reset();                  /* 静默丢弃半帧，回到等帧头 */
+    }
   }
 
   /* 定时上报状态：上位机无需轮询即可绘图 */

@@ -26,6 +26,7 @@ CMD_ACK_FAULT = 0x05
 CMD_SET_PID = 0x06
 CMD_SAVE_PARAMS = 0x07
 CMD_GET_PARAMS = 0x08
+CMD_GET_DIAG = 0x09       # 诊断：读环形缓冲溢出/累计接收字节（固件 0x89 回应）
 CMD_NACK = 0x7F
 RESP_FLAG = 0x80
 
@@ -146,6 +147,27 @@ def parse_params(payload: bytes) -> dict:
         raise ValueError(f"params payload must be {PARAMS_STRUCT.size} bytes")
     target, kp, ki, kd = PARAMS_STRUCT.unpack(payload)
     return {"target": target, "kp": kp, "ki": ki, "kd": kd}
+
+
+DIAG_STRUCT = struct.Struct("<II")  # 8 字节：溢出丢弃字节数 / 累计入环字节数
+
+
+def build_get_diag() -> bytes:
+    """诊断请求：固件回 0x89 + 8 字节（两个 u32 小端）。"""
+    return build_frame(CMD_GET_DIAG, b"")
+
+
+def parse_diag(payload: bytes) -> dict:
+    """解析 0x89 诊断帧载荷。
+
+    overflow  != 0 说明环形缓冲曾经满过（115200 全速灌包或主循环被长时间阻塞），
+    丢过字节 —— 对应 PROTOCOL_ROBUSTNESS_REVIEW 里"丢字节"的一类风险。
+    rx_bytes 是累计入环字节数，可用于估算真实链路吞吐是否与波特率相符。
+    """
+    if len(payload) != DIAG_STRUCT.size:
+        raise ValueError(f"diag payload must be {DIAG_STRUCT.size} bytes, got {len(payload)}")
+    overflow, rx_bytes = DIAG_STRUCT.unpack(payload)
+    return {"overflow": overflow, "rx_bytes": rx_bytes}
 
 
 class Parser:

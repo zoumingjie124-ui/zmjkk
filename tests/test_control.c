@@ -25,6 +25,7 @@
   *   C9 热失控窗口：单 tick 条件失效只衰减 1 个 tick 的证据，不清零
   *   C10 大热容慢升温 + 周期性 1-tick 抖动：不误报热失控
   *   C11 运行中改目标：热失控窗口证据清零，不被跨目标的旧窗口误判
+  *   C12 重发相同目标：不得清窗，热失控仍须被检出（上位机周期同步场景）
   ******************************************************************************
   */
 #include <stdio.h>
@@ -506,6 +507,33 @@ static void c11_target_change_resets_window(void)
         "real runaway still detected after reset (%d)", (int)Control_Get()->fault);
 }
 
+/* ============================ C12 重发同一目标不得压住热失控判据 ============================ */
+static void c12_same_target_resend_keeps_window(void)
+{
+  plant_t pl;
+  int k, fault_tick = -1;
+
+  printf("C12 re-sending the SAME target must not suppress runaway detection:\n");
+  reset_all(&pl, 12);
+  pl.detached = 1u;                       /* 传感器钉在室温，加热器持续满功率 */
+  CHECK(Control_Start() == 0u, "start accepted");
+
+  for (k = 0; k < 400; k++)               /* 200s，每 5s 重发一次相同目标（模拟上位机周期同步） */
+  {
+    if ((k % 10) == 0)
+    {
+      (void)Control_SetTarget(Control_GetParams()->target_c);
+    }
+    Control_Tick();
+    plant_step(&pl);
+    if (Control_Get()->state == CTRL_FAULT) { fault_tick = k; break; }
+  }
+  CHECK(fault_tick >= 0, "fault raised despite periodic same-target commands (tick %d)", fault_tick);
+  CHECK(fault_tick >= 0 && fault_tick <= 125, "within the normal 60s window (+ramp)");
+  CHECK(Control_Get()->fault == CTRL_FAULT_RUNAWAY, "fault == RUNAWAY (%d)", (int)Control_Get()->fault);
+  CHECK(Heater_GetDutyPermille() == 0u, "heater off after fault");
+}
+
 int main(void)
 {
   printf("=== TempCtrl control tests (host build, tests real control.c + pid.c) ===\n");
@@ -522,6 +550,7 @@ int main(void)
   c9_dip_does_not_reset_window();
   c10_slow_plant_with_dips_no_false_trip();
   c11_target_change_resets_window();
+  c12_same_target_resend_keeps_window();
   printf("=== %s: %d check(s) failed ===\n", g_failed == 0 ? "ALL PASS" : "FAILED", g_failed);
   return g_failed == 0 ? 0 : 1;
 }

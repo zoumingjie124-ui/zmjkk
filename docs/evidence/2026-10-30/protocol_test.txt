@@ -55,4 +55,16 @@ T10 command encoding vectors:
   [PASS] SET_PID frame len 18, payload 12
   [PASS] SET_PID frame parses back
   [PASS] SET_PID payload=8.00/0.10/1.50
-=== ALL PASS: 46/46 checks passed ===
+T11 GET_DIAG request/response:
+  [PASS] diag request len=6 cmd=0x09
+  [PASS] cmd 0x09 with empty payload
+  [PASS] diag response parses
+  [PASS] overflow=7
+  [PASS] rx_bytes=123456
+  [PASS] zero overflow is a dict, not a bool
+  [PASS] parse_diag(0B) raises ValueError
+  [PASS] parse_diag(4B) raises ValueError
+  [PASS] parse_diag(7B) raises ValueError
+  [PASS] parse_diag(9B) raises ValueError
+  [PASS] parse_diag(12B) raises ValueError
+=== ALL PASS: 57/57 checks passed ===

@@ -82,6 +82,11 @@ class SerialWorker(threading.Thread):
                         self.out_q.put(("params", P.parse_params(frame.payload)))
                     except ValueError as exc:
                         self.out_q.put(("error", f"参数帧解析失败: {exc}"))
+                elif frame.cmd == (P.CMD_GET_DIAG | P.RESP_FLAG):
+                    try:
+                        self.out_q.put(("diag", P.parse_diag(frame.payload)))
+                    except ValueError as exc:
+                        self.out_q.put(("error", f"诊断帧解析失败: {exc}"))
                 elif frame.cmd == P.CMD_NACK:
                     code = frame.payload[0] if frame.payload else 0xFF
                     self.out_q.put(("error", f"NACK: {P.ACK_TEXT.get(code, code)}"))
@@ -202,6 +207,10 @@ class App(tk.Tk):
                   command=lambda: self._send(P.build_simple(P.CMD_SAVE_PARAMS))).grid(
             row=row, column=0, columnspan=3, sticky="we", pady=2)
         row += 1
+        tk.Button(panel, text="读取诊断 (overflow)", width=20,
+                  command=lambda: self._send(P.build_get_diag())).grid(
+            row=row, column=0, columnspan=3, sticky="we", pady=2)
+        row += 1
 
         tk.Label(panel, text="日志", bg=COLOR_BG).grid(row=row, column=0, sticky="w", pady=(10, 0))
         row += 1
@@ -283,6 +292,9 @@ class App(tk.Tk):
                     self._log("已读取下位机参数")
                 elif kind == "ack":
                     self._log(f"ACK {data}")
+                elif kind == "diag":
+                    tail = "  <-- 曾有溢出丢字节" if data["overflow"] else ""
+                    self._log(f"DIAG overflow={data['overflow']} rx_bytes={data['rx_bytes']}{tail}")
                 elif kind == "error":
                     self._log(f"ERROR {data}")
                 elif kind == "stat":

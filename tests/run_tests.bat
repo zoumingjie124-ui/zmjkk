@@ -27,6 +27,13 @@ test_control.exe > control_test.log 2>&1
 if errorlevel 1 set FAILED=1
 type control_test.log
 
+rem comm.c 用 stubs\usart.h 遮蔽真的 Core\Inc\usart.h（后者会把 HAL 头拉进来）
+"%MSVC%\bin\Hostx64\x64\cl.exe" /nologo /utf-8 /W4 /I stubs /I ..\App\Inc /I ..\Hardware test_comm.c /Fe:test_comm.exe > cl_build_comm.log 2>&1
+if errorlevel 1 goto comm_build_fail
+test_comm.exe > comm_test.log 2>&1
+if errorlevel 1 set FAILED=1
+type comm_test.log
+
 if "%FAILED%"=="1" (
   echo HOST TESTS: SOME FAILED
   exit /b 1
@@ -50,4 +57,8 @@ exit /b 1
 :param_build_fail
 echo PARAM BUILD FAILED
 type cl_build_param.log
+exit /b 1
+:comm_build_fail
+echo COMM BUILD FAILED
+type cl_build_comm.log
 exit /b 1
