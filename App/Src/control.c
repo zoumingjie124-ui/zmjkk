@@ -28,6 +28,7 @@ static ctrl_params_t   s_params;
 
 /* 热失控窗口状态 */
 static uint16_t s_rw_ticks = 0u;
+static uint16_t s_cool_ticks = 0u;   /* 停机余热冷却窗口剩余 tick；0 = 窗口已关闭 */
 
 /* 前置声明：Control_Stop()/Control_AckFault() 先于定义处调用它 */
 static void fan_hysteresis(float temp_c);
@@ -102,6 +103,9 @@ void Control_Init(void)
   s_params.ki       = CTRL_KI_DEFAULT;
   s_params.kd       = CTRL_KD_DEFAULT;
   s_snap.target_c   = s_params.target_c;
+
+  s_rw_ticks   = 0u;
+  s_cool_ticks = 0u;   /* 上电直接在 STANDBY：没有余热，不开冷却窗口 */
 
   pid_init(&s_pid, s_params.kp, s_params.ki, s_params.kd, CTRL_PID_TS_S);
 
@@ -203,6 +207,7 @@ uint8_t Control_Start(void)
 
   pid_reset(&s_pid);              /* 每次启动清零积分/微分状态，避免沿用旧累积 */
   s_rw_ticks   = 0u;
+  s_cool_ticks = 0u;              /* 重新进入闭环，旧的冷却窗口作废 */
   s_snap.state = CTRL_RUNNING;
   return 0u;
 }
@@ -214,9 +219,10 @@ uint8_t Control_Stop(void)
     return 2u;
   }
   Heater_Off();                   /* 逻辑 + 软件输出许可一起关 */
-  /* 风扇**不在这里关**（F 项策略）：停机后余热仍会让温度上升，
-     立刻停风等于把热量闷在腔体里。保持当前状态，由 STANDBY 的
-     fan_hysteresis() 在下一个 tick 按实际温度决定何时停。 */
+  /* 风扇**不在这里关**（F 项策略）：打开余热冷却窗口，由 STANDBY 按
+     绝对温度（>40℃ 吹 / <38℃ 停）决定何时停，窗口最长 180s。
+     窗口外待机一律不吹风，见 control.h 的 CTRL_COOLDOWN_* 说明。 */
+  s_cool_ticks  = CTRL_COOLDOWN_TICKS;
   s_snap.duty   = Heater_GetDuty();
   s_snap.fan_on = Fan_IsOn();
   s_snap.state  = CTRL_STANDBY;
@@ -250,9 +256,9 @@ uint8_t Control_AckFault(void)
   s_snap.fault  = CTRL_FAULT_NONE;
   s_snap.state  = CTRL_STANDBY;   /* 只回待机，不自动恢复闭环 */
   Heater_Off();
-  /* 与 STOP 同一策略（F 项）：确认故障时温度可能仍高于目标（只是没到 75℃），
-     这里也交给迟滞判断，不要机械地关风扇。 */
-  fan_hysteresis(d.temperature_c);
+  /* 与 STOP 同一策略（F 项）：确认故障时温度可能仍偏高（只是没到 75℃），
+     开一个余热冷却窗口交给 STANDBY 判断，不要机械地关风扇。 */
+  s_cool_ticks  = CTRL_COOLDOWN_TICKS;
   s_snap.duty   = Heater_GetDuty();
   s_snap.fan_on = Fan_IsOn();
   return 0u;
@@ -311,10 +317,28 @@ void Control_Tick(void)
       {
         break;
       }
-      /* 待机：加热必关；风扇按与运行期相同的迟滞做**余热管理**（F 项策略）。
-         传感器无效时上面的 interlock 已转 FAULT，走不到这里。 */
+      /* 待机：加热必关。风扇只在**刚停机的有限窗口**内做余热管理，
+         且判据用绝对温度而非 target+2 —— 否则目标设得比室温低
+         （夏天设 20℃、室温 28℃）时，待机风扇会永久转。
+         窗口到期即停风：此时离 75℃ 联锁还很远，继续闷着不构成危险；
+         真要是环境异常升温，联锁会接管（FAULT 风扇强制开）。 */
       Heater_Off();
-      fan_hysteresis(d.temperature_c);
+      if (s_cool_ticks > 0u)
+      {
+        s_cool_ticks--;
+        if (d.temperature_c > CTRL_COOLDOWN_ON_C)
+        {
+          Fan_On();
+        }
+        else if (d.temperature_c < CTRL_COOLDOWN_OFF_C)
+        {
+          Fan_Off();
+        }
+      }
+      else
+      {
+        Fan_Off();                       /* 非冷却窗口：待机不吹风 */
+      }
       s_snap.duty   = Heater_GetDuty();
       s_snap.fan_on = Fan_IsOn();
       break;

@@ -535,51 +535,67 @@ static void c12_same_target_resend_keeps_window(void)
   CHECK(Heater_GetDutyPermille() == 0u, "heater off after fault");
 }
 
-/* ============================ C13 STOP 后的余热管理 ============================ */
+/* ==================== C13 停机余热管理：有限窗口 + 绝对阈值 ==================== */
 static void c13_stop_keeps_fan_for_residual_heat(void)
 {
   plant_t pl;
+  int k;
 
-  printf("C13 STOP keeps the fan while residual heat is above the hysteresis:\n");
+  printf("C13 residual-heat cooldown: bounded window + absolute thresholds:\n");
   reset_all(&pl, 12);                       /* 目标默认 45℃ */
 
   CHECK(Control_Start() == 0u, "start accepted");
 
-  g_meas = 48.0f;                           /* 模拟刚停机时的余热：> 45+2.0 */
+  g_meas = 48.0f;                           /* 运行期余热：> 45+2.0 */
   Control_Tick();
   CHECK(Fan_IsOn() == 1u, "fan on while hot in RUNNING");
 
   CHECK(Control_Stop() == 0u, "stop accepted");
   CHECK(Heater_GetDutyPermille() == 0u, "heater off immediately after STOP");
-  CHECK(Fan_IsOn() == 1u, "fan NOT killed by STOP (residual-heat policy)");
+  CHECK(Fan_IsOn() == 1u, "fan NOT killed by STOP");
 
-  g_meas = 46.5f;                           /* 45.5 < T < 47：迟滞带内，应保持 */
+  g_meas = 41.0f;                           /* > 40：窗口内继续吹 */
   Control_Tick();
-  CHECK(Fan_IsOn() == 1u, "fan stays on inside the hysteresis band");
-  CHECK(Heater_GetDutyPermille() == 0u, "still no heating in STANDBY");
+  CHECK(Fan_IsOn() == 1u, "fan on above 40C inside the window");
 
-  g_meas = 45.2f;                           /* < 45+0.5 */
+  g_meas = 39.0f;                           /* 38 < T < 40：迟滞带内保持 */
   Control_Tick();
-  CHECK(Fan_IsOn() == 0u, "fan off after cooling below target+0.5");
+  CHECK(Fan_IsOn() == 1u, "hysteresis band keeps the fan on");
 
-  g_meas = 44.8f;                           /* 本来就凉，STOP 不应开风 */
+  g_meas = 37.0f;                           /* < 38 */
   Control_Tick();
-  CHECK(Fan_IsOn() == 0u, "fan stays off when already cool");
+  CHECK(Fan_IsOn() == 0u, "fan off below 38C");
+
+  /* 窗口边界：温度一直 45℃（高于阈值），窗口过期后必须停风 */
+  g_meas = 45.0f;
+  for (k = 0; k < (int)CTRL_COOLDOWN_TICKS + 2; k++)
+  {
+    Control_Tick();
+  }
+  CHECK(Fan_IsOn() == 0u, "window expired -> fan forced off even if still warm");
   CHECK(Control_Get()->state == CTRL_STANDBY, "still STANDBY");
 
-  /* 故障确认走同一判据：确认时温度仍高于目标（但没到 75℃）→ 风扇不应被关掉 */
-  g_meas = 80.0f;                           /* 超温 -> FAULT，风扇强制开 */
+  /* 关键回归（评审指出的副作用）：目标低于室温时，待机不得长期吹风 */
+  CHECK(Control_Start() == 0u, "restart accepted");
+  CHECK(Control_SetTarget(20.0f) == 0u, "target set to 20C (below room temp)");
+  g_meas = 28.0f;                           /* 室温 28℃ */
+  Control_Tick();
+  CHECK(Fan_IsOn() == 1u, "RUNNING: 28C > 20+2 so fan runs");
+  CHECK(Control_Stop() == 0u, "stop accepted again");
+  Control_Tick();
+  CHECK(Fan_IsOn() == 0u, "STANDBY: 28C < 40C -> no fan (target below room temp)");
+
+  /* 故障确认走同一窗口 */
+  g_meas = 80.0f;
   Control_Tick();
   CHECK(Control_Get()->state == CTRL_FAULT && Fan_IsOn() == 1u, "overtemp -> FAULT with fan on");
-
-  g_meas = 60.0f;                           /* 降到目标以上、75℃ 以下 */
+  g_meas = 60.0f;
   CHECK(Control_AckFault() == 0u, "ack accepted after cooling");
-  CHECK(Fan_IsOn() == 1u, "fan kept on after ACK (still above target+2)");
+  CHECK(Fan_IsOn() == 1u, "fan kept on after ACK (60C > 40C, window open)");
   CHECK(Heater_GetDutyPermille() == 0u, "no heating after ACK");
-
-  g_meas = 45.0f;                           /* 降到目标以内 */
+  g_meas = 30.0f;
   Control_Tick();
-  CHECK(Fan_IsOn() == 0u, "fan off once back near target");
+  CHECK(Fan_IsOn() == 0u, "fan off once cooled below 38C");
 }
 
 int main(void)

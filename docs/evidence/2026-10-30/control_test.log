@@ -79,20 +79,25 @@ C12 re-sending the SAME target must not suppress runaway detection:
   [PASS] within the normal 60s window (+ramp)
   [PASS] fault == RUNAWAY (3)
   [PASS] heater off after fault
-C13 STOP keeps the fan while residual heat is above the hysteresis:
+C13 residual-heat cooldown: bounded window + absolute thresholds:
   [PASS] start accepted
   [PASS] fan on while hot in RUNNING
   [PASS] stop accepted
   [PASS] heater off immediately after STOP
-  [PASS] fan NOT killed by STOP (residual-heat policy)
-  [PASS] fan stays on inside the hysteresis band
-  [PASS] still no heating in STANDBY
-  [PASS] fan off after cooling below target+0.5
-  [PASS] fan stays off when already cool
+  [PASS] fan NOT killed by STOP
+  [PASS] fan on above 40C inside the window
+  [PASS] hysteresis band keeps the fan on
+  [PASS] fan off below 38C
+  [PASS] window expired -> fan forced off even if still warm
   [PASS] still STANDBY
+  [PASS] restart accepted
+  [PASS] target set to 20C (below room temp)
+  [PASS] RUNNING: 28C > 20+2 so fan runs
+  [PASS] stop accepted again
+  [PASS] STANDBY: 28C < 40C -> no fan (target below room temp)
   [PASS] overtemp -> FAULT with fan on
   [PASS] ack accepted after cooling
-  [PASS] fan kept on after ACK (still above target+2)
+  [PASS] fan kept on after ACK (60C > 40C, window open)
   [PASS] no heating after ACK
-  [PASS] fan off once back near target
+  [PASS] fan off once cooled below 38C
 === ALL PASS: 0 check(s) failed ===
