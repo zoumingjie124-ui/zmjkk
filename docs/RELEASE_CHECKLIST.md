@@ -9,7 +9,7 @@
 
 | # | 检查项 | 状态 | 结论 |
 |---|--------|------|------|
-| 1 | 统一当前编译基线及历史数据（必须） | ✅ | 权威基线唯一化为 Code=18626B / 224 项；历史值（17306/17522/17542/17554/17566/17938/17950/17978/18030）全部标注来源 |
+| 1 | 统一当前编译基线及历史数据（必须） | ✅ | 权威基线唯一化为 Code=18626B / 224 项；历史值（17306/17522/17542/17554/17566/17938/17950/17978/18030/18106）全部标注来源 |
 | 2 | 修正 NTC 理论灵敏度计算（必须） | ✅ | 0.06 → **0.022 ℃/LSB @25℃**，并给出全温区表 |
 | 3 | 统一"软件输出许可"与"硬件保护"术语（必须） | ✅ | 新增术语表，全库统一用词 |
 | 4 | 验证 NTC 断线后的实际关断延迟 | 🟡 | 静态分析 ≤0.65s；实测方法已写，**未上板** |
@@ -39,7 +39,8 @@
 | Code=17522B | 第三轮整改前（`57d9b22`） | TEST_REPORT §0.1 标为历史 |
 | Code=17542B | IWDG 首版记录 | TEST_REPORT §8.4、SECURITY_REVIEW_2 标"当时"，无法复现 |
 | 参数测试 21 项 | 阶段 7 | DEVELOPMENT_PLAN §7.3 标"当时"，并指向 §0 |
-| 测试总数 87 / 96 / 144 / 159 / 193 项 | 早期各轮 | 已全部替换为当前 213 项 |
+| Code=18106B | 第五轮基线（`4a448d2`） | TEST_REPORT §0.1 标为历史 |
+| 测试总数 87 / 96 / 144 / 159 / 193 / 213 项 | 早期各轮 | 已全部替换为当前 224 项 |
 
 **改过的文件**：`docs/ARCHITECTURE.md`（资源表）、`README.md`、`docs/RESUME_AND_INTERVIEW.md`、`docs/TEST_REPORT.md`、`docs/SECURITY_REVIEW_2.md`、`docs/DEVELOPMENT_PLAN.md`。
 
@@ -94,8 +95,8 @@ UV4.exe -r TempCtrl.uvprojx
 Program Size: Code=18626 RO-data=2042 RW-data=80 ZI-data=3240
 "TempCtrl\TempCtrl.axf" - 0 Error(s), 0 Warning(s).
 
-tests\run_tests.bat        -> PID 28/28 PASS, PARAM 30/30 PASS, CTRL 80/80 PASS,
-                              COMM 18/18 PASS, HOST TESTS: ALL PASS   (共 156 项)
+tests\run_tests.bat / .sh  -> PID 28/28 PASS, PARAM 30/30 PASS, CTRL 87/87 PASS,
+                              COMM 22/22 PASS, HOST TESTS: ALL PASS   (共 167 项；MSVC 实测，GCC 侧评审者复跑)
 python host/test_protocol.py -> 57/57 PASS                            (含 2000 次模糊 + 诊断帧)
 ```
 
