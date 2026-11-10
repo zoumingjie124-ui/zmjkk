@@ -16,7 +16,7 @@
   * 仅在 SENSOR_SIM_ENABLE=1 时编入（台架算法验证用）。一阶惯性：
   *   稳态 = 环境温度 + 加热增益 × 逻辑占空比（风扇开启时散热增强）
   *   T += (steady - T) × dt / τ
-  * 模拟模型取的是 **逻辑占空比**（Heater_GetDuty），与软件输出许可无关，
+  * 模拟模型取的是 **逻辑占空比**（Heater_GetDutyPermille），与软件输出许可无关，
   * 因此模拟模式下闭环仍可观察，但 PA8 不会有任何输出。
   *
   * ============================ 模式选择 ====================================
@@ -80,7 +80,8 @@ static uint16_t ntc_read_raw(void)
     }
     sum += HAL_ADC_GetValue(&hadc1);
   }
-  (void)HAL_ADC_Stop(&hadc1);
+  /* 不在正常末尾调 HAL_ADC_Stop（该调用会清 ADON 关闭 ADC 电源），
+     保持 ADC 处于单次转换就绪态，避免每 500ms 重新上电带来的首拍稳定误差 */
   return (uint16_t)(sum / 8u);
 }
 

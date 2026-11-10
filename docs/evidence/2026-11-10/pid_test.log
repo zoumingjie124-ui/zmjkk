@@ -1,0 +1,38 @@
+=== TempCtrl PID unit tests (host build, tests real pid.c) ===
+T1 step response (25C -> 45C, 600s):
+  final T=44.99C u=50.0% err=0.01C maxT=44.99C
+  [PASS] converged: |err|=0.005C
+  [PASS] overshoot=-0.005C < 3.0C
+  [PASS] output always in [0,100]
+  [PASS] no input fault
+T2 output clamp:
+  [PASS] positive clamp u=100.0 == 100
+  [PASS] negative clamp u=0.0 == 0
+  [PASS] integral=0.000 within hard limits
+T3 anti-windup:
+  [PASS] saturated output u=100.0 == 100
+  [PASS] frozen integral=0.0000 == 0
+  [PASS] desaturated in 1 step u=0.0 == 0
+  [PASS] hard integral clamp=5.0000 == 5
+  [PASS] unsaturated output u=21.1
+T4 invalid input interception:
+  state before fault: integral=2.5000
+  [PASS] NaN measurement -> u=0.0 fault=1
+  [PASS] integral untouched=2.5000
+  [PASS] NaN setpoint -> u=0.0 fault=1
+  [PASS] overrange(999C) -> u=0.0 fault=1
+  [PASS] underrange(-100C) -> u=0.0 fault=1
+  [PASS] fault cleared after valid input, fault=0
+  [PASS] recovered output u=42.8 in [0,100]
+  [PASS] integral resumes normally=2.7500
+T5 derivative on measurement (no kick on setpoint step / start):
+  [PASS] steady: u=0.0000 ~ 0
+  [PASS] setpoint step +10C -> u=20.000 == Kp*10 = 20 (no D kick)
+  [PASS] first call after reset: u=0.000000 == 0 (no start-up kick)
+  [PASS] rising measurement -> D brakes (clamped at 0): u=0.000
+  [PASS] filtered derivative state negative: -0.4000
+T6 derivative low-pass:
+  [PASS] one-step jump smoothed: D=-0.8000 == alpha*raw=-0.8000 (alpha=0.200)
+  [PASS] smaller than the unfiltered -4.0
+  [PASS] decays to 0 when measurement flat: D=-0.000001
+=== ALL PASS: 0 check(s) failed ===

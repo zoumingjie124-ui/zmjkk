@@ -38,11 +38,11 @@
 | CMD | 名称 | 请求载荷 | 响应 | 响应载荷 |
 |-----|------|----------|------|----------|
 | 0x01 | GET_STATUS | 无 | 0x81 | 状态帧 25B（§3） |
-| 0x02 | SET_TARGET | f32 目标温度 | 0x82 | u8 状态码 |
+| 0x02 | SET_TARGET | f32 目标温度 | 0x82 | u8 状态码（当前实现只返回 0 成功 / 3 参数越界） |
 | 0x03 | START | 无 | 0x83 | u8 状态码 |
 | 0x04 | STOP | 无 | 0x84 | u8 状态码（**只停加热，风扇可能继续转**，见下方说明） |
 | 0x05 | ACK_FAULT | 无 | 0x85 | u8 状态码 |
-| 0x06 | SET_PID | f32 kp + f32 ki + f32 kd | 0x86 | u8 状态码 |
+| 0x06 | SET_PID | f32 kp + f32 ki + f32 kd | 0x86 | u8 状态码（当前实现只返回 0 成功 / 3 参数越界） |
 | 0x07 | SAVE_PARAMS | 无 | 0x87 | u8 状态码（**仅 STANDBY 允许**；RUNNING/FAULT 返回 4） |
 | 0x08 | GET_PARAMS | 无 | 0x88 | f32 target + kp + ki + kd（16B） |
 | 0x09 | GET_DIAG | 无 | 0x89 | 诊断帧 8B（§3.1） |

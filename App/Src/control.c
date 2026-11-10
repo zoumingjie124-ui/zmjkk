@@ -26,13 +26,10 @@ static pid_t           s_pid;
 static ctrl_snapshot_t s_snap;
 static ctrl_params_t   s_params;
 
-/* 热失控窗口状态 */
-static uint16_t s_rw_ticks = 0u;
+/* 热失控窗口与停机余热冷却窗口状态 */
+static uint16_t s_rw_ticks   = 0u;
+static float    s_rw_t0      = 0.0f;
 static uint16_t s_cool_ticks = 0u;   /* 停机余热冷却窗口剩余 tick；0 = 窗口已关闭 */
-
-/* 前置声明：Control_Stop()/Control_AckFault() 先于定义处调用它 */
-static void fan_hysteresis(float temp_c);
-static float    s_rw_t0    = 0.0f;
 
 /* 统一的进入故障动作：关加热（逻辑+闸门）、开风扇、锁定、刷新快照 */
 static void enter_fault(ctrl_fault_t f)
@@ -54,6 +51,14 @@ static uint8_t runaway_check(float temp_c, uint16_t duty_permille)
     if (s_rw_ticks == 0u)
     {
       s_rw_t0 = temp_c;                 /* 窗口起点 */
+    }
+    else if ((temp_c - s_rw_t0) >= CTRL_RUNAWAY_MIN_RISE_C)
+    {
+      /* 第六轮改进：一旦累计温升已满 2℃，立即把基线推进到当前高温并开新窗，
+         防止升温中途加热丝断路回落时，仍拿最初的冷态起点比较而漏判第一个 60s 窗口 */
+      s_rw_t0    = temp_c;
+      s_rw_ticks = 0u;
+      return 0u;
     }
     s_rw_ticks++;
     if (s_rw_ticks >= CTRL_RUNAWAY_WINDOW_TICKS)
@@ -105,6 +110,7 @@ void Control_Init(void)
   s_snap.target_c   = s_params.target_c;
 
   s_rw_ticks   = 0u;
+  s_rw_t0      = 0.0f;
   s_cool_ticks = 0u;   /* 上电直接在 STANDBY：没有余热，不开冷却窗口 */
 
   pid_init(&s_pid, s_params.kp, s_params.ki, s_params.kd, CTRL_PID_TS_S);
@@ -191,22 +197,24 @@ uint8_t Control_Start(void)
   /* 安全校验：启动前必须拿到**新鲜**且有效的测量值。
      按键与串口两个入口都走这里，不存在旁路。 */
   d = Sensor_Read();
+  s_snap.temp_c       = d.temperature_c;
+  s_snap.temp_valid   = d.is_valid;
+  s_snap.is_simulated = d.is_simulated;
+
   if (!d.is_valid || d.temperature_c > CTRL_SAFE_LIMIT_C)
   {
     Heater_Off();                 /* 逻辑清零 + 关软件输出许可 */
     Fan_On();
-    s_snap.state        = CTRL_FAULT;
-    s_snap.fault        = (!d.is_valid) ? CTRL_FAULT_SENSOR : CTRL_FAULT_OVERTEMP;
-    s_snap.temp_c       = d.temperature_c;
-    s_snap.temp_valid   = d.is_valid;
-    s_snap.is_simulated = d.is_simulated;
-    s_snap.duty         = Heater_GetDuty();
-    s_snap.fan_on       = Fan_IsOn();
+    s_snap.state  = CTRL_FAULT;
+    s_snap.fault  = (!d.is_valid) ? CTRL_FAULT_SENSOR : CTRL_FAULT_OVERTEMP;
+    s_snap.duty   = Heater_GetDuty();
+    s_snap.fan_on = Fan_IsOn();
     return 3u;                    /* 传感器无效或超温，拒绝启动并锁定 */
   }
 
   pid_reset(&s_pid);              /* 每次启动清零积分/微分状态，避免沿用旧累积 */
   s_rw_ticks   = 0u;
+  s_rw_t0      = d.temperature_c;
   s_cool_ticks = 0u;              /* 重新进入闭环，旧的冷却窗口作废 */
   s_snap.state = CTRL_RUNNING;
   return 0u;
@@ -241,24 +249,34 @@ uint8_t Control_AckFault(void)
   /* 故障确认前复核传感器与超温状态：仍无效或仍超温就保持锁定，
      返回 3u（由 comm.c 映射为 ACK_SENSOR_ERR=6），避免误关停散热风扇 */
   d = Sensor_Read();
+  s_snap.temp_c       = d.temperature_c;
+  s_snap.temp_valid   = d.is_valid;
+  s_snap.is_simulated = d.is_simulated;
+
   if (!d.is_valid || d.temperature_c > CTRL_SAFE_LIMIT_C)
   {
     Heater_Off();
     Fan_On();
-    s_snap.fault      = (!d.is_valid) ? CTRL_FAULT_SENSOR : CTRL_FAULT_OVERTEMP;
-    s_snap.temp_c     = d.temperature_c;
-    s_snap.temp_valid = d.is_valid;
-    s_snap.duty       = Heater_GetDuty();
-    s_snap.fan_on     = Fan_IsOn();
+    s_snap.fault  = (!d.is_valid) ? CTRL_FAULT_SENSOR : CTRL_FAULT_OVERTEMP;
+    s_snap.duty   = Heater_GetDuty();
+    s_snap.fan_on = Fan_IsOn();
     return 3u;
   }
 
   s_snap.fault  = CTRL_FAULT_NONE;
   s_snap.state  = CTRL_STANDBY;   /* 只回待机，不自动恢复闭环 */
   Heater_Off();
-  /* 与 STOP 同一策略（F 项）：确认故障时温度可能仍偏高（只是没到 75℃），
-     开一个余热冷却窗口交给 STANDBY 判断，不要机械地关风扇。 */
-  s_cool_ticks  = CTRL_COOLDOWN_TICKS;
+  /* 与 STOP 同一策略（F 项）：确认故障时若温度仍偏高（>=38℃），
+     开一个余热冷却窗口交给 STANDBY 判断；若已低于 38℃（如室温排障），立即关风扇。 */
+  if (d.temperature_c < CTRL_COOLDOWN_OFF_C)
+  {
+    Fan_Off();
+    s_cool_ticks = 0u;
+  }
+  else
+  {
+    s_cool_ticks = CTRL_COOLDOWN_TICKS;
+  }
   s_snap.duty   = Heater_GetDuty();
   s_snap.fan_on = Fan_IsOn();
   return 0u;
@@ -278,11 +296,9 @@ static uint8_t safety_interlock(const Sensor_Data_t *d)
 
 /* ---------------- 周期调度 ---------------- */
 
-/* 风扇迟滞：高于 目标+2.0℃ 开，回落到 目标+0.5℃ 内关。
-   RUNNING 与 STANDBY **共用同一套判据**（健壮性审查 F 项的策略）：
-   停机只关加热，不立刻停风——余热仍会把温度顶上去，立即停风等于把热量
-   闷在腔体里，极端情况能冲到 75℃ 联锁阈值。现在 STANDBY 继续按同一迟滞
-   吹风，等温度回落到目标附近才停，OLED/串口都能看到 FAN 仍为 ON。 */
+/* 运行期（RUNNING）风扇迟滞：高于 目标+2.0℃ 开，回落到 目标+0.5℃ 内关。
+   注：STANDBY 待机态不调本函数，而是使用 s_cool_ticks（180s 窗口）+ 绝对温度阈值（40/38℃），
+   避免目标设得低于室温时待机风扇永久旋转。 */
 static void fan_hysteresis(float temp_c)
 {
   if (temp_c > s_params.target_c + CTRL_FAN_ON_DELTA_C)

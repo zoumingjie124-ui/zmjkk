@@ -70,11 +70,31 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 }
 
 /**
+  * @brief 串口错误回调（第六轮新增）：防止 Flash 擦写关中断期间触发 ORE 导致接收永久锁死
+  * @note  STM32F1 无硬件 FIFO，关中断超过 2 字节时间（~174us）且主机发包时会置 ORE；
+  *        HAL_UART_IRQHandler 遇到 ORE 会中止 IT 接收并置 RxState=READY，必须在此清除标志并重挂。
+  */
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+  if (huart->Instance == USART1)
+  {
+    __HAL_UART_CLEAR_OREFLAG(huart);
+    s_overflow++;
+    (void)HAL_UART_Receive_IT(&huart1, &s_rx_byte, 1u);
+  }
+}
+
+/**
   * @brief 主循环取字节
   * @retval 1 = 取到；0 = 空
   */
 uint8_t Usart_ReadByte(uint8_t *b)
 {
+  /* 自愈兜底：若因极端中断竞争或错误恢复期间 HAL 接收处于 READY，主循环自动重挂 */
+  if (huart1.RxState == HAL_UART_STATE_READY)
+  {
+    (void)HAL_UART_Receive_IT(&huart1, &s_rx_byte, 1u);
+  }
   if (s_tail == s_head)
   {
     return 0u;

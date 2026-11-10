@@ -26,7 +26,8 @@
   *   C10 大热容慢升温 + 周期性 1-tick 抖动：不误报热失控
   *   C11 运行中改目标：热失控窗口证据清零，不被跨目标的旧窗口误判
   *   C12 重发相同目标：不得清窗，热失控仍须被检出（上位机周期同步场景）
-  *   C13 STOP 后的余热管理：加热立即关，风扇按迟滞继续吹到目标+0.5℃ 以内
+  *   C13 STOP/故障确认后的余热管理：加热立即关，STANDBY 按绝对阈值（40/38℃）+ 180s 有限窗口控风
+  *   C14 升温中途加热器断路（基线 s_rw_t0 前移验证）+ 低温 AckFault 立即停风与快照同步
   ******************************************************************************
   */
 #include <stdio.h>
@@ -598,6 +599,46 @@ static void c13_stop_keeps_fan_for_residual_heat(void)
   CHECK(Fan_IsOn() == 0u, "fan off once cooled below 38C");
 }
 
+/* ==================== C14 升温中途断路基线前移 + 低温故障确认即停风扇 ==================== */
+static void c14_baseline_advance_and_lowtemp_ack(void)
+{
+  plant_t pl;
+  int k, fault_tick = -1;
+
+  printf("C14 mid-climb heater break (baseline advance) & room-temp AckFault:\n");
+  reset_all(&pl, 12);
+  (void)Control_SetTarget(60.0f);
+  CHECK(Control_Start() == 0u, "start accepted");
+
+  /* 先升温 30 个 tick（15s），温度从 25℃ 升到 36℃（温升 +11℃ >= 2℃），s_rw_t0 应已前移至 ~35℃ */
+  for (k = 0; k < 30; k++)
+  {
+    g_meas = 25.0f + 0.37f * (float)(k + 1);
+    Control_Tick();
+  }
+  CHECK(s_rw_t0 >= 33.0f, "baseline s_rw_t0 advanced with heating (%.1fC)", (double)s_rw_t0);
+
+  /* 此时加热丝断路，温度缓慢跌回 30℃（仍比最初 25℃ 高 +5℃，但比新基线低）：
+     必须在 1 个窗口（120 ticks）内检出 RUNAWAY，不能因 30-25=+5>=2 而漏掉首窗 */
+  for (k = 0; k < 125; k++)
+  {
+    g_meas = 30.0f;
+    Control_Tick();
+    if (Control_Get()->state == CTRL_FAULT) { fault_tick = k; break; }
+  }
+  CHECK(fault_tick >= 0 && fault_tick <= 120,
+        "mid-climb heater break caught in 1st window (tick %d)", fault_tick);
+  CHECK(Control_Get()->fault == CTRL_FAULT_RUNAWAY, "fault == RUNAWAY");
+
+  /* 室温 25℃ 下确认故障：快照温度应立即更新为 25.0℃，且风扇当即关闭（不等下一次 Tick） */
+  g_meas = 25.0f;
+  CHECK(Control_AckFault() == 0u, "ack accepted at 25C");
+  CHECK(Fan_IsOn() == 0u && Control_Get()->fan_on == 0u,
+        "fan turned off immediately on AckFault at 25C (<38C)");
+  CHECK(fabsf(Control_Get()->temp_c - 25.0f) < 0.01f && Control_Get()->temp_valid == 1u,
+        "snapshot temp updated immediately on AckFault (%.1fC)", (double)Control_Get()->temp_c);
+}
+
 int main(void)
 {
   printf("=== TempCtrl control tests (host build, tests real control.c + pid.c) ===\n");
@@ -616,6 +657,7 @@ int main(void)
   c11_target_change_resets_window();
   c12_same_target_resend_keeps_window();
   c13_stop_keeps_fan_for_residual_heat();
+  c14_baseline_advance_and_lowtemp_ack();
   printf("=== %s: %d check(s) failed ===\n", g_failed == 0 ? "ALL PASS" : "FAILED", g_failed);
   return g_failed == 0 ? 0 : 1;
 }

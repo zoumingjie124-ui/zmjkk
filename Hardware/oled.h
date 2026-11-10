@@ -21,4 +21,7 @@ void OLED_ShowBinNum(uint8_t Line, uint8_t Column, uint32_t Number, uint8_t Leng
 
 void OLED_ShowChinese(uint8_t Line, uint8_t Column, uint8_t Index);
 
+/* 使差分缓存失效，下一帧整屏重写（周期性调用可修正 I2C 丢包造成的残影） */
+void OLED_Invalidate(void);
+
 #endif

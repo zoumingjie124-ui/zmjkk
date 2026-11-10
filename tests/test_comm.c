@@ -7,7 +7,7 @@
   *   T1 正常帧：GET_STATUS 请求 -> 0x81 + 25 字节载荷
   *   T2 分片不大于阈值：帧内字节间隔 40ms 仍能正常组帧（超时不得误伤）
   *   T3 【A 项回归】半帧卡住 + 超时 + 随后一条完整 STOP：STOP 必须被执行，
-  *      不能被当成残余载荷吞掉（修复前这里只会回一个 NACK(1)，STOP 丢失）
+  *      不能被当成残余载荷吞掉（含：超时与新帧同拍到达、以及环形缓冲溢出复位）
   *   T4 超时阈值边界：49ms 不复位、51ms 复位
   *   T5 GET_DIAG：0x09 -> 0x89 + 8 字节（溢出计数 / 累计接收字节）
   *   T6 超时后接带载荷的完整帧：载荷被正确解析（不只是零载荷命令）
@@ -24,7 +24,7 @@
 #include "control.h"
 #include "flash_param.h"
 
-/* ------------------------------- 断框架 ------------------------------- */
+/* ------------------------------- 断言框架 ------------------------------- */
 static int g_failed = 0;
 
 #define CHECK(cond, fmt, ...)                                                  \
@@ -138,12 +138,12 @@ uint8_t Param_SaveValues(float target_c, float kp, float ki, float kd)
 /* ------------------------------- 辅助 ------------------------------- */
 static void t_reset(void)
 {
+  g_ovf = 0u;
+  g_rx_bytes = 0u;
   Comm_Init();
   g_rx_len = 0;
   g_rx_pos = 0;
   g_tx_len = 0;
-  g_ovf = 0u;
-  g_rx_bytes = 0u;
   g_start_calls = g_stop_calls = g_target_calls = g_pid_calls = g_ack_calls = g_save_calls = 0;
   g_last_target = 0.0f;
   g_snap.state = CTRL_STANDBY;
@@ -275,6 +275,30 @@ static void t3_truncated_then_stop(void)
   CHECK(g_stop_calls == 1, "STOP executed (%d)", g_stop_calls);
   CHECK0(find_resp(0x84u) >= 0, "got ACK 0x84");
   CHECK0(find_resp(0x7Fu) < 0, "no NACK (frame was not swallowed)");
+
+  /* 第六轮回归（F-1）：半帧超时后、下一次 Comm_Tick 执行前 STOP 已入环（中间无空转 Comm_Tick），
+     或者发生环形缓冲溢出后紧跟 STOP，STOP 均不得被吞掉 */
+  t_reset();
+  inject(half, 6);
+  Comm_Tick();
+  g_tick += 55u;                /* 跨过 50ms，但中间没有空转 Comm_Tick（模拟 OLED 刷新阻塞或 40->50ms 边界） */
+  g_tx_len = 0;
+  inject(stop, n);              /* STOP 已经在环形缓冲里等排空 */
+  Comm_Tick();
+  CHECK(g_stop_calls == 1, "same-tick timeout+STOP executed (%d)", g_stop_calls);
+  CHECK0(find_resp(0x84u) >= 0, "got ACK 0x84 on same-tick timeout");
+
+  /* 环形缓冲溢出（g_ovf 增加）时，即使未满 50ms 也立即复位解析器并正常执行后续 STOP */
+  t_reset();
+  inject(half, 6);
+  Comm_Tick();
+  g_tick += 5u;                 /* 仅过 5ms（未超时），但发生缓冲溢出丢字节 */
+  g_ovf++;
+  g_tx_len = 0;
+  inject(stop, n);
+  Comm_Tick();
+  CHECK(g_stop_calls == 1, "overflow resets parser and executes STOP (%d)", g_stop_calls);
+  CHECK0(find_resp(0x84u) >= 0, "got ACK 0x84 after overflow reset");
 }
 
 /* ============================ T4 阈值边界 ============================ */

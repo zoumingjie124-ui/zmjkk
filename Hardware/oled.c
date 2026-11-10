@@ -9,7 +9,8 @@
   *      （CubeMX 风格：所有 GPIO 集中在 MX_GPIO_Init，驱动只管读写电平）
   *   3. 上电延时从 for 空循环改为 HAL_Delay(100)（初始化阶段允许阻塞，
   *      主循环里才禁止长时间 Delay）
-  *   显示逻辑（时序、命令序列、字库索引）与原驱动完全一致，未做改动。
+  *   4. 第六轮优化：增加 4x16 字符影子缓存 s_vram，未变化字符跳过 I2C 传输，
+  *      将稳态 Menu_Render() 耗时从 ~24ms 压降至 <2ms，消除对 10ms 时间片的挤压。
   ******************************************************************************
   */
 #include "oled.h"
@@ -18,6 +19,9 @@
 /*引脚电平宏（引脚号统一来自 main.h）*/
 #define OLED_W_SCL(x)		HAL_GPIO_WritePin(OLED_SCL_GPIO_Port, OLED_SCL_Pin, (GPIO_PinState)(x))
 #define OLED_W_SDA(x)		HAL_GPIO_WritePin(OLED_SDA_GPIO_Port, OLED_SDA_Pin, (GPIO_PinState)(x))
+
+/* 4 行 x 16 列字符影子缓存（0 表示未缓存，强制刷新） */
+static char s_vram[4][16];
 
 /**
   * @brief  I2C开始
@@ -101,6 +105,13 @@ void OLED_SetCursor(uint8_t Y, uint8_t X)
 void OLED_Clear(void)
 {
 	uint8_t i, j;
+	for (j = 0; j < 4; j++)
+	{
+		for (i = 0; i < 16; i++)
+		{
+			s_vram[j][i] = 0;
+		}
+	}
 	for (j = 0; j < 8; j++)
 	{
 		OLED_SetCursor(j, 0);
@@ -117,9 +128,37 @@ void OLED_Clear(void)
   * @param  Column 列位置，范围：1~16
   * @param  Char 要显示的一个字符，范围：ASCII可见字符
   */
+/**
+  * @brief 使影子缓存整体失效，下一帧将整屏重写
+  * @note  差分刷新的代价是失去自愈能力：软件 I2C 没有应答检测，若某次传输
+  *        被干扰丢失，缓存已更新而屏幕没更新，之后内容不变就永不重绘。
+  *        Menu 每 5s 调一次本函数，可把这类残影纠正回来（代价：那一帧 ~24ms）。
+  */
+void OLED_Invalidate(void)
+{
+	uint8_t i, j;
+
+	for (j = 0; j < 4; j++)
+	{
+		for (i = 0; i < 16; i++)
+		{
+			s_vram[j][i] = 0;
+		}
+	}
+}
+
 void OLED_ShowChar(uint8_t Line, uint8_t Column, char Char)
 {
 	uint8_t i;
+
+	if (Line >= 1u && Line <= 4u && Column >= 1u && Column <= 16u)
+	{
+		if (s_vram[Line - 1u][Column - 1u] == Char)
+		{
+			return;
+		}
+		s_vram[Line - 1u][Column - 1u] = Char;
+	}
 
 	OLED_SetCursor((Line - 1) * 2, (Column - 1) * 8);	//设置光标位置在上半部分
 	for (i = 0; i < 8; i++)
@@ -295,6 +334,16 @@ const uint8_t OLED_CN_Font[][32] = {
 void OLED_ShowChinese(uint8_t Line, uint8_t Column, uint8_t Index)
 {
 	uint8_t i;
+
+	/* 16x16 汉字占 2 行 x 2 列，四格缓存都要失效；
+	   只清 Line 行会让 Line+1 行的字符误判为"未变化"而残影 */
+	if (Line >= 1u && Line <= 3u && Column >= 1u && Column <= 15u)
+	{
+		s_vram[Line - 1u][Column - 1u] = 0;
+		s_vram[Line - 1u][Column]      = 0;
+		s_vram[Line][Column - 1u]      = 0;
+		s_vram[Line][Column]           = 0;
+	}
 
 	OLED_SetCursor((Line - 1) * 2, (Column - 1) * 8);
 	for (i = 0; i < 16; i++)

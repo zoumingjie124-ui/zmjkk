@@ -1,6 +1,6 @@
 # App 层（应用层）— 当前实际内容
 
-> 本文件描述**已实现**的模块与依赖关系。最后更新：2026-10-24。
+> 本文件描述**已实现**的模块与依赖关系。最后更新：2026-11-10（第六轮审查更新）。
 
 依赖方向：`App → Hardware → HAL`；`pid.c` / `param_codec.c` 例外——它们零依赖，可在宿主机直接编译测试。
 
@@ -8,9 +8,9 @@
 |------|------|------|------|
 | `pid.c/h` | 位置式 PID：输出限幅 0~100、双重积分抗饱和、微分作用于测量值 + 一阶低通、NaN/超界输入拦截；固定 `Ts=0.5s` | 无（纯 C） | ✅ 已实现 · 28 项单测通过 |
 | `param_codec.c/h` | 参数镜像序列化（28B）/ 反序列化 + CRC-32 + 数值范围校验 | 无（纯 C） | ✅ 已实现 · 30 项单测通过（含范围校验） |
-| `control.c/h` | 四状态机 INIT/STANDBY/RUNNING/FAULT；安全联锁（传感器无效 / >75℃ / PID 输入异常 / 热失控）；风扇迟滞（RUNNING 用 target+2 相对判据；STANDBY 用 40/38℃ 绝对阈值 + 180s 余热窗口）；运行时参数读写；START/ACK 新鲜读数校验 | pid + sensor/heater/fan | ✅ 已实现 · 80 项宿主机测试通过，上板待测 |
-| `menu.c/h` | 按键菜单（启停/故障确认/编辑 TGT·KP·KI·KD/步进/保存）+ OLED 四行渲染（正常页/编辑页/消息） | key + oled + control + flash_param | ✅ 已实现 · 上板待测 |
-| `comm.c/h` | AA55 帧解析状态机 + **50ms 帧内字节超时** + CRC16 校验 + 9 条命令分发（含 `GET_DIAG`）+ 200ms 状态上报 + NACK 错误码 | usart + control + flash_param | ✅ 已实现 · 解析器 18 项 + 协议 57 项测试通过，链路待上板 |
+| `control.c/h` | 四状态机 INIT/STANDBY/RUNNING/FAULT；安全联锁（传感器无效 / >75℃ / PID 输入异常 / 热失控基线推进）；风扇迟滞（RUNNING 用 target+2 相对判据；STANDBY 用 40/38℃ 绝对阈值 + 180s 余热窗口）；运行时参数读写；START/ACK 新鲜读数校验与快照同步 | pid + sensor/heater/fan | ✅ 已实现 · 87 项宿主机测试通过，上板待测 |
+| `menu.c/h` | 按键菜单（启停/故障确认/编辑 TGT·KP·KI·KD/步进/保存，故障态自动退编辑）+ OLED 四行渲染（含 `SEN/OVT/RUN` 故障标签与合法负温显示） | key + oled + control + flash_param | ✅ 已实现 · 上板待测 |
+| `comm.c/h` | AA55 帧解析状态机 + **排空前 50ms 帧内字节超时与溢出复位** + CRC16 校验 + 9 条命令分发（含 `GET_DIAG`）+ 200ms 状态上报 + NACK 错误码 | usart + control + flash_param | ✅ 已实现 · 解析器 22 项 + 协议 57 项测试通过，链路待上板 |
 | `flash_param.c/h` | 末页 Flash（0x0800FC00）整页擦写 + 关中断临界区 + 回读校验；加载失败回默认并置标志 | param_codec + HAL FLASH | ✅ 已实现 · 参数编解码已测，擦写待上板 |
 
 ## 约束

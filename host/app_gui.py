@@ -59,45 +59,49 @@ class SerialWorker(threading.Thread):
         except Exception as exc:  # noqa: BLE001
             self.error = str(exc)
             self.out_q.put(("error", f"打开串口失败: {exc}"))
+            self.out_q.put(("closed", None))
             return
 
         self.out_q.put(("info", f"已连接 {self.port} @ {self.baud}"))
-        while not self._stop.is_set():
-            try:
-                chunk = self.ser.read(64)
-            except Exception as exc:  # noqa: BLE001
-                self.out_q.put(("error", f"串口读取异常: {exc}"))
-                break
-            if not chunk:
-                continue
+        try:
+            while not self._stop.is_set():
+                try:
+                    chunk = self.ser.read(64)
+                except Exception as exc:  # noqa: BLE001
+                    self.out_q.put(("error", f"串口读取异常: {exc}"))
+                    break
+                if not chunk:
+                    continue
 
-            for frame in self.parser.feed(chunk):
-                if frame.cmd == (P.CMD_GET_STATUS | P.RESP_FLAG):
-                    try:
-                        self.out_q.put(("status", P.parse_status(frame.payload)))
-                    except ValueError as exc:
-                        self.out_q.put(("error", f"状态帧解析失败: {exc}"))
-                elif frame.cmd == (P.CMD_GET_PARAMS | P.RESP_FLAG):
-                    try:
-                        self.out_q.put(("params", P.parse_params(frame.payload)))
-                    except ValueError as exc:
-                        self.out_q.put(("error", f"参数帧解析失败: {exc}"))
-                elif frame.cmd == (P.CMD_GET_DIAG | P.RESP_FLAG):
-                    try:
-                        self.out_q.put(("diag", P.parse_diag(frame.payload)))
-                    except ValueError as exc:
-                        self.out_q.put(("error", f"诊断帧解析失败: {exc}"))
-                elif frame.cmd == P.CMD_NACK:
-                    code = frame.payload[0] if frame.payload else 0xFF
-                    self.out_q.put(("error", f"NACK: {P.ACK_TEXT.get(code, code)}"))
-                elif frame.is_response:
-                    code = frame.payload[0] if frame.payload else 0xFF
-                    self.out_q.put(("ack", f"0x{frame.cmd:02X} {P.ACK_TEXT.get(code, code)}"))
-            if self.parser.crc_errors:
-                self.out_q.put(("stat", f"CRC错误累计 {self.parser.crc_errors}"))
-                self.parser.crc_errors = 0
-        if self.ser and self.ser.is_open:
-            self.ser.close()
+                for frame in self.parser.feed(chunk):
+                    if frame.cmd == (P.CMD_GET_STATUS | P.RESP_FLAG):
+                        try:
+                            self.out_q.put(("status", P.parse_status(frame.payload)))
+                        except ValueError as exc:
+                            self.out_q.put(("error", f"状态帧解析失败: {exc}"))
+                    elif frame.cmd == (P.CMD_GET_PARAMS | P.RESP_FLAG):
+                        try:
+                            self.out_q.put(("params", P.parse_params(frame.payload)))
+                        except ValueError as exc:
+                            self.out_q.put(("error", f"参数帧解析失败: {exc}"))
+                    elif frame.cmd == (P.CMD_GET_DIAG | P.RESP_FLAG):
+                        try:
+                            self.out_q.put(("diag", P.parse_diag(frame.payload)))
+                        except ValueError as exc:
+                            self.out_q.put(("error", f"诊断帧解析失败: {exc}"))
+                    elif frame.cmd == P.CMD_NACK:
+                        code = frame.payload[0] if frame.payload else 0xFF
+                        self.out_q.put(("error", f"NACK: {P.ACK_TEXT.get(code, code)}"))
+                    elif frame.is_response:
+                        code = frame.payload[0] if frame.payload else 0xFF
+                        self.out_q.put(("ack", f"0x{frame.cmd:02X} {P.ACK_TEXT.get(code, code)}"))
+                if self.parser.crc_errors:
+                    self.out_q.put(("stat", f"CRC错误累计 {self.parser.crc_errors}"))
+                    self.parser.crc_errors = 0
+        finally:
+            if self.ser and self.ser.is_open:
+                self.ser.close()
+            self.out_q.put(("closed", None))
 
     def send(self, data: bytes) -> None:
         if self.ser and self.ser.is_open:
@@ -295,6 +299,10 @@ class App(tk.Tk):
                 elif kind == "diag":
                     tail = "  <-- 曾有溢出丢字节" if data["overflow"] else ""
                     self._log(f"DIAG overflow={data['overflow']} rx_bytes={data['rx_bytes']}{tail}")
+                elif kind == "closed":
+                    if self.worker is not None:
+                        self.worker = None
+                        self.btn_conn.config(text="连接")
                 elif kind == "error":
                     self._log(f"ERROR {data}")
                 elif kind == "stat":
@@ -341,9 +349,13 @@ class App(tk.Tk):
         pad_l, pad_r, pad_t, pad_b = 44, 44, 12, 24
         pw, ph = w - pad_l - pad_r, h - pad_t - pad_b
 
+        y_min = TEMP_MIN
+        if (self.t_hist and min(self.t_hist) < TEMP_MIN) or (self.s_hist and min(self.s_hist) < TEMP_MIN):
+            y_min = 0.0
+
         def ty(v: float) -> float:                     # 温度轴
-            v = min(max(v, TEMP_MIN), TEMP_MAX)
-            return pad_t + ph * (1.0 - (v - TEMP_MIN) / (TEMP_MAX - TEMP_MIN))
+            v = min(max(v, y_min), TEMP_MAX)
+            return pad_t + ph * (1.0 - (v - y_min) / (TEMP_MAX - y_min))
 
         def dy(v: float) -> float:                     # 占空比轴
             return pad_t + ph * (1.0 - v / 100.0)
@@ -351,7 +363,7 @@ class App(tk.Tk):
         for i in range(5):                             # 网格 + 左轴刻度
             y = pad_t + ph * i / 4
             c.create_line(pad_l, y, pad_l + pw, y, fill=COLOR_GRID)
-            temp_val = TEMP_MAX - (TEMP_MAX - TEMP_MIN) * i / 4
+            temp_val = TEMP_MAX - (TEMP_MAX - y_min) * i / 4
             c.create_text(pad_l - 6, y, text=f"{temp_val:.0f}", anchor="e",
                           fill=COLOR_TARGET, font=("Consolas", 9))
             c.create_text(pad_l + pw + 6, y, text=f"{100 - 25 * i}", anchor="w",

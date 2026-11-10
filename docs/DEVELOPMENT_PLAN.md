@@ -385,13 +385,26 @@ Program Size: Code=17114 RO-data=2042 RW-data=56 ZI-data=3160
 | # | 问题 | 修复 | 验证 |
 |---|------|------|------|
 | 1 | 重发同一目标会清空热失控窗口，导致判据被永久压住 | `Control_SetTarget()` 改为**仅当数值真的变化**才清窗 | 新增 C12（每 5s 重发相同目标，仍在第 119 个 tick 报 RUNAWAY） |
-| 2 | TEST_REPORT §0 表格自相矛盾（98 项/控制 40 vs 合计 159/55） | 统一为 156 C 项（PID 28 + 参数 30 + 控制 80 + 解析器 18）+ 协议 57 = **203** | 三个口径（§0 / §1 / §3.x）互相对得上 |
+| 2 | TEST_REPORT §0 表格自相矛盾（98 项/控制 40 vs 合计 159/55） | 统一为 156 C 项（PID 28 + 参数 30 + 控制 80 + 解析器 18）+ 协议 57 = **213**（第六轮增补 C14 与 T3 同拍/溢出回归后为 167 + 57 = **224**） | 三个口径（§0 / §1 / §3.x）互相对得上 |
 | 3 | GET_DIAG 只有固件侧，上位机读不到溢出计数 | `protocol.build_get_diag/parse_diag`、`monitor_cli` 每 5s 拉取并告警、GUI 加"读取诊断"按钮 | 固件侧 T5 + 上位机侧 T11（11 项，含 5 种错误长度） |
 | 4 | 健壮性 A 项（帧内无超时）未修 | `comm.c` 新增 50ms 帧内字节间隔超时，超时静默复位 | 新增 `tests/test_comm.c` 18 项，含 A 项回归与 49/51ms 边界 |
 | 5 | 健壮性 F 项（STOP 后立刻停风，余热只能冲到 75℃ 联锁）**安全相关** | 定策略：STOP 只关加热、不停风；`AckFault` 同样处理。**首版用 target+2 判据，评审指出「目标低于室温会永久吹风」后改为绝对阈值（40/38℃）+ 180s 冷却窗口**（`s_cool_ticks`） | 新增 C13（20 项）：STOP 后 PWM=0、FAN 保持；41/39/37℃ 迟滞；窗口跑满强制停风；**目标 20℃+室温 28℃ 待机不吹**；故障确认同窗口 |
 
 **关键的自证**：第 4 条的实现做了反向验证——把超时分支临时改成永不成立，T3 立刻出现 4 项失败，其中 `STOP executed (0)` 正是 A 项描述的后果。这比"写完测试全绿"更能说明测试确实盯着缺陷。
 
-**复测**：Keil 全量 Rebuild 0E0W（Code=18106B / RO=2042B / RW=68B / ZI=3180B）；宿主机 213 项全过（MSVC，四项 C 测试零警告）；`tune_helper --selftest` 8/8；gcc/Linux 侧由评审者复跑 **213 项全过**（与 MSVC 结果一致）。
+**复测（第五轮当时）**：Keil 全量 Rebuild 0E0W（Code=18106B / RO=2042B / RW=68B / ZI=3180B）；宿主机 213 项全过（MSVC，四项 C 测试零警告）；`tune_helper --selftest` 8/8；gcc/Linux 侧由评审者复跑 **213 项全过**（与 MSVC 结果一致）。
 
 **仍未做**：所有上板项（含 A 项的最终验收脚本 `repro_truncated_frame.py`）；GUI 仍无法在本机开窗（缺 tkinter），本轮新增的诊断按钮只做了语法与 AST 检查。
+
+---
+
+## 第六轮：深度代码与文档一致性修复（2026-11-10）
+
+| # | 类别 | 问题 | 修复 | 验证 |
+|---|------|------|------|------|
+| 1 | 固件协议 (F-1) | `Comm_Tick()` 先排空缓冲再判 50ms 超时，若新帧（如 STOP）在超时边界后、下次 Tick 前入环仍会被旧半帧吞掉；缓冲溢出未触发复位 | 排空循环前先检查 `Usart_OverflowCount()` 变化与 `FRAME_GAP_TIMEOUT_MS` 超时；`SET_TARGET/SET_PID` 统一改调 `map_ctrl_status()` | `test_comm.c` T3 新增同拍超时+STOP 与溢出复位 4 项断言（共 22/22 PASS） |
+| 2 | 外设驱动 (F-2) | STM32F1 在 Flash 擦写关中断（20~40ms）期间若上位机发包超 2 字节触发硬件 `ORE`，HAL 会关闭中断接收并置 `READY` 导致永久失聪 | `Core/Src/usart.c` 新增 `HAL_UART_ErrorCallback`（清 `ORE`、计数并重挂 `Receive_IT`）+ `Usart_ReadByte` 状态自愈检查 | GCC + STM32F103xB HAL 头文件零警告语法检查通过 |
+| 3 | 菜单显示 (F-3) | 编辑参数途中进 `FAULT` 会卡在编辑页遮挡状态；合法负温 `[-40,0)℃` 误显 `ERR`；OLED 无故障类型提示 | `Menu_Tick()` 在 `CTRL_FAULT` 下强制 `s_edit = EDIT_OFF`；`draw_temp1` 支持负温显示；L1 右上角新增 `SEN/OVT/RUN` 故障标签 | 语法检查通过，列宽严格对齐 16 列 |
+| 4 | 控制状态机 (F-4) | 升温已满 2℃ 后若中途加热器断路降温，旧 `s_rw_t0` 仍停在初始冷态导致漏判首窗；`Start/AckFault` 成功未同步快照温度，室温确认故障风扇多吹 500ms | `runaway_check` 在温升满 2℃ 时立即推进 `s_rw_t0`；`Start/AckFault` 同步刷新 `s_snap`，`<38℃` 确认故障即刻关风扇 | `test_control.c` 新增 C14 共 7 项断言（共 87/87 PASS） |
+| 5 | 采样与刷屏 (F-5) | `ntc_read_raw()` 末尾调 `HAL_ADC_Stop` 每次关断 ADC 电源；OLED 每次全刷 50 字符耗时长 | 移除正常采样末尾 `HAL_ADC_Stop`；`oled.c` 增加 4×16 字符影子缓存 `s_vram` 差分刷新 | 语法检查与回归测试通过 |
+| 6 | 脚本与文档 (T-1/T-2/D-1) | `run_tests.sh` 把两份日志写到 `/tmp` 导致快照漏档；`app_gui.py` 断连状态与温度轴下限问题；`RESUME_AND_INTERVIEW.md` 等 7 处文档前后矛盾 | 修正 `run_tests.sh` 完整归档 4 份 C 日志并串联 `test_protocol.py`；修复 `app_gui.py`；同步全部 7 处文档描述 | `run_tests.sh` 一键跑通 224/224 PASS，快照完整归档 |

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 宿主机测试（gcc/clang，Linux/macOS/WSL/MSYS2 均可）：PID + 参数编解码 + 控制状态机
+# 宿主机测试（gcc/clang，Linux/macOS/WSL/MSYS2 均可）：PID + 参数编解码 + 控制状态机 + 通信解析器 + 协议
 # 用法：cd tests && ./run_tests.sh
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -16,15 +16,16 @@ run() {  # run <name> <log> <extra include flags...>
   [ "${PIPESTATUS[0]}" = "0" ] || fail=1
 }
 
-# 日志已 gitignore：MSVC 记录留在 tests/*.log（本地），gcc 结果写到临时目录；快照统一由 snapshot_evidence.py 归档
-run test_pid     "$OUT/pid_test.log"     -I ../App/Inc
-run test_param   "$OUT/param_test.log"   -I ../App/Inc
-run test_control control_test.log        -I stubs -I ../App/Inc -I ../Hardware
+# 日志统一写到当前 tests/ 目录（已 gitignore），供 snapshot_evidence.py 完整归档 4 份 C 测试日志
+run test_pid     pid_test.log     -I ../App/Inc
+run test_param   param_test.log   -I ../App/Inc
+run test_control control_test.log -I stubs -I ../App/Inc -I ../Hardware
 # comm.c 经 stubs/usart.h 遮蔽真 usart.h（后者会把 HAL 头拉进来）
-run test_comm    comm_test.log           -I stubs -I ../App/Inc -I ../Hardware
+run test_comm    comm_test.log    -I stubs -I ../App/Inc -I ../Hardware
 
 if command -v python3 >/dev/null 2>&1; then
-  python3 -I ../host/tune_helper.py --selftest || fail=1
+  python3 ../host/tune_helper.py --selftest || fail=1
+  (cd ../host && python3 test_protocol.py) || fail=1
 fi
 
 if [ "$fail" = "1" ]; then echo "HOST TESTS: SOME FAILED"; exit 1; fi

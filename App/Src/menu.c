@@ -101,6 +101,13 @@ void Menu_Tick(void)
   key_event_t e3 = Key_GetEvent(KEY_ID_3);
   const ctrl_snapshot_t *s = Control_Get();
 
+  /* 故障态下强制退出参数编辑页（第六轮修复）：
+     否则编辑途中进 FAULT 会因 KEY2 被屏蔽而卡在编辑页，遮挡第 3/4 行状态显示 */
+  if (s->state == CTRL_FAULT)
+  {
+    s_edit = EDIT_OFF;
+  }
+
   /* ---- KEY1：启停 / 故障确认 ---- */
   if (e1 == KEY_EVENT_SHORT)
   {
@@ -170,20 +177,52 @@ void Menu_Tick(void)
 
 /* ---------------- 渲染辅助 ---------------- */
 
-/* 温度 1 位小数：xx.xC（col 起 5 字符） */
+/* 温度显示（col 起固定 5 字符）：
+   0.0~99.9℃ 显示 "xx.xC"；-9.9~-0.1℃ 显示 "-x.xC"；-40.0~-10.0℃ 显示 " -xxC" */
 static void draw_temp1(uint8_t line, uint8_t col, float v)
 {
-  int32_t t10 = (int32_t)(v * 10.0f + 0.5f);
+  int32_t t10;
 
-  if (t10 < 0 || t10 > 999)
+  if (v >= 0.0f)
   {
-    OLED_ShowString(line, col, "  ERR");
-    return;
+    t10 = (int32_t)(v * 10.0f + 0.5f);
+    if (t10 > 999)
+    {
+      OLED_ShowString(line, col, "  ERR");
+      return;
+    }
+    OLED_ShowNum(line, col, (uint32_t)(t10 / 10), 2);
+    OLED_ShowChar(line, col + 2, '.');
+    OLED_ShowNum(line, col + 3, (uint32_t)(t10 % 10), 1);
+    OLED_ShowChar(line, col + 4, 'C');
   }
-  OLED_ShowNum(line, col, (uint32_t)(t10 / 10), 2);
-  OLED_ShowChar(line, col + 2, '.');
-  OLED_ShowNum(line, col + 3, (uint32_t)(t10 % 10), 1);
-  OLED_ShowChar(line, col + 4, 'C');
+  else
+  {
+    t10 = (int32_t)(-v * 10.0f + 0.5f);
+    if (t10 == 0)
+    {
+      OLED_ShowString(line, col, "00.0C");
+    }
+    else if (t10 <= 99)
+    {
+      OLED_ShowChar(line, col, '-');
+      OLED_ShowNum(line, col + 1, (uint32_t)(t10 / 10), 1);
+      OLED_ShowChar(line, col + 2, '.');
+      OLED_ShowNum(line, col + 3, (uint32_t)(t10 % 10), 1);
+      OLED_ShowChar(line, col + 4, 'C');
+    }
+    else if (t10 <= 400)
+    {
+      OLED_ShowChar(line, col, ' ');
+      OLED_ShowChar(line, col + 1, '-');
+      OLED_ShowNum(line, col + 2, (uint32_t)((t10 + 5) / 10), 2);
+      OLED_ShowChar(line, col + 4, 'C');
+    }
+    else
+    {
+      OLED_ShowString(line, col, "  ERR");
+    }
+  }
 }
 
 /* 参数 2 位小数：xx.yy（col 起 5 字符） */
@@ -220,9 +259,30 @@ static const char *edit_name(void)
   }
 }
 
+static const char *fault_tag(ctrl_fault_t f)
+{
+  switch (f)
+  {
+    case CTRL_FAULT_SENSOR:   return " SEN";
+    case CTRL_FAULT_OVERTEMP: return " OVT";
+    case CTRL_FAULT_RUNAWAY:  return " RUN";
+    default:                  return "    ";
+  }
+}
+
 void Menu_Render(uint32_t uptime_s)
 {
+  static uint32_t s_last_inv_s = 0xFFFFFFFFu;
   const ctrl_snapshot_t *s = Control_Get();
+
+  /* 每 5s 让差分缓存整体失效一次，下一帧整屏重写：
+     软件 I2C 没有应答检测，偶发丢包会造成"缓存说有、屏幕没有"的残影，
+     周期性自愈可把它纠回来（代价仅那一帧恢复到 ~24ms）。 */
+  if ((uptime_s != s_last_inv_s) && ((uptime_s % 5u) == 0u))
+  {
+    s_last_inv_s = uptime_s;
+    OLED_Invalidate();
+  }
   const ctrl_params_t   *p = Control_GetParams();
 
   if (s_msg_ttl > 0u)
@@ -230,18 +290,20 @@ void Menu_Render(uint32_t uptime_s)
     s_msg_ttl--;
   }
 
-  /* ---- L1：状态 + 当前温度 ---- */
+  /* ---- L1：状态 + 当前温度 + 故障原因标签（13..16 列） ---- */
   OLED_ShowString(1, 1, Control_StateName());
   OLED_ShowChar(1, 4, ' ');
   if (s->temp_valid)
   {
     OLED_ShowString(1, 5, "T:");
     draw_temp1(1, 7, s->temp_c);
+    OLED_ShowChar(1, 12, ' ');
   }
   else
   {
-    OLED_ShowString(1, 5, "T:  ERR   ");
+    OLED_ShowString(1, 5, "T:  ERR ");
   }
+  OLED_ShowString(1, 13, (s->state == CTRL_FAULT) ? fault_tag(s->fault) : "    ");
 
   /* ---- L2：目标温度 ---- */
   OLED_ShowString(2, 1, "SET:");

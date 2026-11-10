@@ -33,7 +33,12 @@
 #define ACK_FLASH_ERR   5u   /* Flash 擦除/写入/回读失败（第二轮审查新增） */
 #define ACK_SENSOR_ERR  6u   /* 传感器无效，拒绝启动/无法确认故障（新增） */
 
-/* Control 返回值 -> 通信错误码映射（0 成功/1 参数/2 状态/3 传感器无效） */
+/* Control 返回值 -> 通信错误码映射（0 成功/1 参数/2 状态/3 传感器无效）
+   注意（健壮性审查 G 项）：Control_SetTarget()/Control_SetPid() 目前**只返回 0 或 1**，
+   不会返回 2/3，所以这两个命令走本映射与原来的 "非 0 即 RANGE_ERR" 完全等价——
+   这里只是把写法统一，**语义没有变化**。G 项（SET_* 把状态错误吞成参数错误）仍未修复；
+   要真正修掉，得先在 Control_SetTarget/SetPid 里加"仅 STANDBY/RUNNING 允许"的状态判断。 */
+
 static uint8_t map_ctrl_status(uint8_t st)
 {
   switch (st)
@@ -86,6 +91,7 @@ static uint8_t  s_payload[MAX_PAYLOAD];
 static uint16_t s_crc_rx;
 static uint32_t s_last_report_ms;
 static uint32_t s_last_byte_ms;      /* 最近一次收到字节的时刻（帧内超时判据） */
+static uint32_t s_last_ovf_cnt;      /* 上次检查时的环形缓冲溢出计数 */
 
 /* ---------------- CRC16 / 字节序 ---------------- */
 
@@ -234,7 +240,7 @@ static void handle_frame(uint8_t cmd, const uint8_t *pl, uint8_t len)
     case CMD_SET_TARGET:
       if (len != 4u) { send_ack(cmd, ACK_LEN_ERR); break; }
       status = Control_SetTarget(get_f32(pl));
-      send_ack(cmd, (uint8_t)(status == 0u ? ACK_OK : ACK_RANGE_ERR));
+      send_ack(cmd, map_ctrl_status(status));
       break;
 
     case CMD_START:
@@ -258,7 +264,7 @@ static void handle_frame(uint8_t cmd, const uint8_t *pl, uint8_t len)
     case CMD_SET_PID:
       if (len != 12u) { send_ack(cmd, ACK_LEN_ERR); break; }
       status = Control_SetPid(get_f32(&pl[0]), get_f32(&pl[4]), get_f32(&pl[8]));
-      send_ack(cmd, (uint8_t)(status == 0u ? ACK_OK : ACK_RANGE_ERR));
+      send_ack(cmd, map_ctrl_status(status));
       break;
 
     case CMD_SAVE_PARAMS:
@@ -378,7 +384,8 @@ void Comm_Init(void)
 {
   parser_reset();
   s_last_report_ms = HAL_GetTick();
-  s_last_byte_ms   = HAL_GetTick();
+  s_last_byte_ms   = s_last_report_ms;
+  s_last_ovf_cnt   = Usart_OverflowCount();
 }
 
 void Comm_Tick(void)
@@ -386,7 +393,22 @@ void Comm_Tick(void)
   uint8_t  b;
   uint16_t guard = 0u;
   uint32_t t0;
-  uint32_t now   = HAL_GetTick();
+  uint32_t now = HAL_GetTick();
+  uint32_t ovf = Usart_OverflowCount();
+
+  /* 排空循环前先检查两件事（第六轮修复）：
+     1) 环形缓冲若发生过溢出丢字节，残余半帧必然已损坏，立即复位解析器；
+     2) 若上一半帧距今已超过 50ms，必须在读取本拍新到达字节（可能是 STOP）
+        之前先复位解析器，否则新到达字节会被旧半帧在排空循环里先吞掉。 */
+  if (ovf != s_last_ovf_cnt)
+  {
+    s_last_ovf_cnt = ovf;
+    parser_reset();
+  }
+  else if ((s_ps != PS_H1) && ((now - s_last_byte_ms) >= FRAME_GAP_TIMEOUT_MS))
+  {
+    parser_reset();
+  }
 
   /* 每 tick 最多消化 128 字节（环容量）且不超过 3ms，见 RX_DRAIN_MAX_* 的说明。
      触到上限时剩余字节留在环里，下个 tick 继续，不丢数据。 */
@@ -399,9 +421,7 @@ void Comm_Tick(void)
     s_last_byte_ms = HAL_GetTick();    /* 每收到一个字节就刷新帧内计时 */
   }
 
-  /* 帧内字节间隔超时：半帧卡住就丢弃，避免"吞掉后续命令"。
-     判定放在排空循环之后，且**重新取一次 now** —— 循环里可能已过几毫秒，
-     用循环前的旧 now 与最新的 s_last_byte_ms 相减会得到下溢的巨大值。 */
+  /* 排空后再兜底判定一次：若本轮未收到新字节且半帧已满 50ms，静默复位。 */
   if (s_ps != PS_H1)
   {
     uint32_t now2 = HAL_GetTick();
