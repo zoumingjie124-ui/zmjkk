@@ -96,7 +96,7 @@ Program Size: Code=18626 RO-data=2042 RW-data=80 ZI-data=3240
 "TempCtrl\TempCtrl.axf" - 0 Error(s), 0 Warning(s).
 
 tests\run_tests.bat / .sh  -> PID 28/28 PASS, PARAM 30/30 PASS, CTRL 87/87 PASS,
-                              COMM 22/22 PASS, HOST TESTS: ALL PASS   (共 167 项；MSVC 实测，GCC 侧评审者复跑)
+                              COMM 22/22 PASS, HOST TESTS: ALL PASS   (共 167 项，MSVC & GCC 双端全过)
 python host/test_protocol.py -> 57/57 PASS                            (含 2000 次模糊 + 诊断帧)
 ```
 

@@ -25,4 +25,7 @@ cd tests  && run_tests.bat                 # 自动归档 pid/param/control/comm
 cd tests  && python snapshot_evidence.py --all   # 再补 rebuild / protocol / demo
 ```
 
+**gcc/Linux 侧**：224 项由评审环境（`tests/run_tests.sh`）复跑通过，日志留在该环境、未入库；
+本目录只保存 Windows/MSVC + UV4 的快照。需要补齐时在 Linux 上跑一次并复制到 `docs/evidence/<日期>/` 即可。
+
 原则：**日志只是证据，不是结论**。真机（上板）项在 `docs/TEST_REPORT.md` §4 仍标"待测试"，直到有人真的测过。
