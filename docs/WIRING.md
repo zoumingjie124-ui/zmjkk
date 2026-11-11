@@ -173,4 +173,4 @@ PTC 在居里点附近电阻急剧上升、功率骤降：
 |------|------|------|
 | SWD | PA13(SWDIO) / PA14(SWCLK) / GND / 3.3V | Keil 下载与在线调试 |
 | USART1 | PA9(TX) / PA10(RX) / GND | 115200 8N1，接 USB-TTL（**TX-RX 交叉**） |
-| 电源 | 5V 或 3.3V / GND | 开发板供电（与 ST-Link 二选一或同时供均可） |
+| 电源 | ST-Link 3V3 / GND | 本工程当前调试接线采用 ST-Link 3.3V 为开发板唯一供电；USB-TTL 的 5V、3V3 均悬空。不得把 USB-TTL 供电与 ST-Link 3V3 并接。若改用其他供电方式，必须先断开 ST-Link 3V3，并确认电源路径与电平兼容。 |
