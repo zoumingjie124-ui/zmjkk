@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1000" viewBox="0 0 1400 1000">
+<defs><style>
+text{font-family:"Noto Sans CJK SC","Microsoft YaHei",sans-serif;fill:#17324d}
+.title{font-size:34px;font-weight:700;fill:#fff}.h{font-size:23px;font-weight:700}.t{font-size:19px}.s{font-size:16px}
+.panel{fill:#f8fbfe;stroke:#8bb6dc;stroke-width:2}.red{stroke:#b52d2d}.blue{stroke:#2463b4}.wire{fill:none;stroke-width:5;stroke-linecap:round;stroke-linejoin:round}
+</style></defs>
+<rect width="1400" height="1000" fill="#fff"/>
+<rect x="24" y="20" width="1352" height="72" rx="14" fill="#174f86"/>
+<text x="700" y="66" text-anchor="middle" class="title">STM32 智能温控终端｜12V 功率驱动与硬件保护</text>
+<text x="700" y="130" text-anchor="middle" font-size="18" fill="#526b80">低边 N-MOS 拓扑｜加热器与风扇分支独立｜主功率线走螺丝端子</text>
+<!-- supply/fuse -->
+<rect x="45" y="180" width="250" height="120" rx="16" class="panel"/>
+<text x="170" y="225" text-anchor="middle" class="h">12V 适配器</text><text x="170" y="265" text-anchor="middle" class="t">+12V / 负极</text>
+<path d="M295 220 H365" class="wire red"/>
+<rect x="365" y="185" width="150" height="70" rx="12" fill="#fff0f0" stroke="#b52d2d" stroke-width="2"/>
+<text x="440" y="228" text-anchor="middle" class="h">保险丝</text>
+<text x="440" y="280" text-anchor="middle" class="s">候选 5A，需核算冷态电流</text>
+<path d="M515 220 H610 V340 H690" class="wire red"/>
+<path d="M610 340 V690 H690" class="wire red"/>
+<circle cx="610" cy="340" r="8" fill="#b52d2d"/><circle cx="610" cy="690" r="8" fill="#b52d2d"/>
+<!-- heater branch -->
+<rect x="690" y="285" width="330" height="110" rx="16" fill="#fff5e9" stroke="#dc8b20" stroke-width="2"/>
+<text x="855" y="330" text-anchor="middle" class="h">PTC 加热片</text><text x="855" y="370" text-anchor="middle" class="t">12V｜采购标称 12–30W</text>
+<path d="M690 340 H655 V410 H690" class="wire red"/>
+<rect x="690" y="420" width="330" height="95" rx="16" fill="#fff0f0" stroke="#b52d2d" stroke-width="2"/>
+<text x="855" y="460" text-anchor="middle" class="h">两只常闭温控开关串联</text>
+<text x="855" y="495" text-anchor="middle" class="t">85℃ 空气侧 + 110℃ 贴铝壳</text>
+<path d="M855 395 V420" class="wire red"/>
+<path d="M855 515 V565" class="wire red"/>
+<rect x="690" y="565" width="330" height="90" rx="16" class="panel"/>
+<text x="855" y="605" text-anchor="middle" class="h">Q1｜N-MOS 低边开关</text>
+<text x="855" y="635" text-anchor="middle" class="t">D 接加热片负端；S 接 GND</text>
+<!-- gate heater -->
+<path d="M420 600 H690" class="wire blue"/>
+<text x="435" y="580" class="h">PA8 / TIM1_CH1</text>
+<rect x="535" y="575" width="95" height="48" rx="8" fill="#fff" stroke="#657786" stroke-width="2"/><text x="582" y="606" text-anchor="middle" class="t">100Ω</text>
+<path d="M855 655 V830" class="wire blue"/>
+<path d="M760 600 V690" class="wire blue"/>
+<rect x="730" y="690" width="60" height="85" rx="8" fill="#fff" stroke="#657786" stroke-width="2"/><text x="760" y="740" text-anchor="middle" class="t">10k</text>
+<path d="M760 775 V830" class="wire blue"/>
+<!-- fan branch -->
+<rect x="1080" y="635" width="260" height="110" rx="16" fill="#eef6ff" stroke="#2463b4" stroke-width="2"/>
+<text x="1210" y="680" text-anchor="middle" class="h">12V 风扇</text><text x="1210" y="720" text-anchor="middle" class="t">按铭牌核对电流/线数</text>
+<path d="M610 690 H1080 V690" class="wire red"/>
+<path d="M1210 745 V790 H1020" class="wire blue"/>
+<rect x="1080" y="800" width="260" height="95" rx="16" class="panel"/>
+<text x="1210" y="840" text-anchor="middle" class="h">Q2｜N-MOS 低边开关</text><text x="1210" y="875" text-anchor="middle" class="t">D 接风扇负端；S 接 GND</text>
+<path d="M420 850 H1080" class="wire blue"/>
+<text x="435" y="830" class="h">PB0 / GPIO（高=开）</text>
+<rect x="535" y="825" width="95" height="48" rx="8" fill="#fff" stroke="#657786" stroke-width="2"/><text x="582" y="856" text-anchor="middle" class="t">100Ω</text>
+<rect x="1000" y="900" width="60" height="50" rx="8" fill="#fff" stroke="#657786" stroke-width="2"/><text x="1030" y="932" text-anchor="middle" class="s">10k</text>
+<!-- ground -->
+<path d="M170 300 V950 H1210" class="wire blue"/>
+<text x="70" y="940" class="h">12V− / GND</text>
+<text x="700" y="975" text-anchor="middle" class="s">12V 负极、两路 MOSFET Source、MCU GND：在驱动板处单点共地</text>
+<!-- notes -->
+<rect x="45" y="355" width="520" height="180" rx="16" class="panel"/>
+<text x="75" y="395" class="h">关键安全要求</text>
+<text x="75" y="435" class="t">• 85℃ 常闭开关装腔内空气侧，不贴 PTC 铝壳</text>
+<text x="75" y="475" class="t">• 110℃ 常闭开关贴 PTC 铝壳；两者串联断开加热</text>
+<text x="75" y="515" class="t">• 保险丝放 12V 入口分叉前；规格按实测电流选</text>
+<rect x="45" y="565" width="520" height="210" rx="16" fill="#fff7e8" stroke="#e4ae50" stroke-width="2"/>
+<text x="75" y="605" class="h">MOSFET 与风扇注意事项</text>
+<text x="75" y="645" class="t">• 两路 Gate 各串 100Ω、各自 Gate–Source 10k 下拉</text>
+<text x="75" y="685" class="t">• IRLZ44N 的 3.3V 栅压导通损耗必须实测验证</text>
+<text x="75" y="725" class="t">• 选型优先看 RDS(on) 在 2.5V/3.3V 栅压下的指标</text>
+<text x="75" y="755" class="s">若无法满足，改用 3.3V 逻辑级 MOSFET 或栅极驱动器</text>
+<text x="1080" y="925" class="s">风扇续流保护：按风扇类型/厂家建议选型</text>
+<text x="1080" y="950" class="s">勿默认把 1N4007 当作必需件</text>
+</svg>
