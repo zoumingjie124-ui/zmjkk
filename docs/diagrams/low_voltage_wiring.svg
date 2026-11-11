@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1000" viewBox="0 0 1400 1000">
+<defs><style>
+text{font-family:"Noto Sans CJK SC","Microsoft YaHei",sans-serif;fill:#17324d}
+.title{font-size:34px;font-weight:700;fill:#fff}.sub{font-size:17px;fill:#31516f}
+.h{font-size:22px;font-weight:700}.t{font-size:18px}.s{font-size:15px}.pin{font-size:19px;font-weight:700}
+.panel{fill:#f4f8fc;stroke:#8bb6dc;stroke-width:2}.mcu{fill:#d9eafa;stroke:#2670b7;stroke-width:3}
+.wire{fill:none;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}
+.blue{stroke:#2463b4}.green{stroke:#26945f}.orange{stroke:#dc8b20}.purple{stroke:#8255a6}.gray{stroke:#606d78}
+</style></defs>
+<rect width="1400" height="1000" fill="#fff"/>
+<rect x="24" y="20" width="1352" height="72" rx="14" fill="#174f86"/>
+<text x="700" y="66" text-anchor="middle" class="title">STM32 智能温控终端｜低压控制接线图</text>
+<text x="700" y="124" text-anchor="middle" class="sub">依据工程 docs/WIRING.md 与固件 GPIO 定义｜功率负载请看独立功率图</text>
+<!-- MCU -->
+<rect x="505" y="190" width="390" height="590" rx="22" class="mcu"/>
+<text x="700" y="235" text-anchor="middle" font-size="27" font-weight="700">STM32F103C8T6</text>
+<text x="700" y="265" text-anchor="middle" class="sub">最小系统板｜3.3V 逻辑</text>
+<g class="pin">
+<text x="540" y="330">PA9  USART1_TX</text><text x="540" y="380">PA10 USART1_RX</text>
+<text x="540" y="465">PA13 SWDIO</text><text x="540" y="515">PA14 SWCLK</text>
+<text x="755" y="330">PA0  ADC1_IN0</text><text x="755" y="420">PB6  I2C_SCL</text><text x="755" y="465">PB7  I2C_SDA</text>
+<text x="755" y="555">PB12 KEY1</text><text x="755" y="600">PB13 KEY2</text><text x="755" y="645">PB14 KEY3</text>
+<text x="755" y="710">PA8 TIM1_CH1</text><text x="755" y="755">PB0 GPIO</text>
+</g>
+<!-- USB TTL -->
+<rect x="35" y="190" width="390" height="210" rx="16" class="panel"/>
+<text x="65" y="230" class="h">USB-TTL（CH340）</text>
+<text x="65" y="275" class="t">TXD → PA10（MCU RX）</text><text x="65" y="315" class="t">RXD ← PA9（MCU TX）</text><text x="65" y="355" class="t">GND → 公共地</text>
+<text x="65" y="385" class="s" fill="#b42318">5V、3V3：均悬空，不接</text>
+<path d="M425 275 H465 V380 H505" class="wire blue"/><path d="M425 315 H480 V330 H505" class="wire green"/>
+<!-- STlink -->
+<rect x="35" y="455" width="390" height="220" rx="16" class="panel"/>
+<text x="65" y="495" class="h">ST-Link V2</text>
+<text x="65" y="540" class="t">SWDIO → PA13</text><text x="65" y="580" class="t">SWCLK → PA14</text><text x="65" y="620" class="t">3V3 → 开发板 3V3（唯一供电）</text><text x="65" y="650" class="t">GND → 公共地</text>
+<path d="M425 540 H470 V465 H505" class="wire purple"/><path d="M425 580 H485 V515 H505" class="wire orange"/>
+<!-- NTC -->
+<rect x="970" y="180" width="390" height="180" rx="16" class="panel"/>
+<text x="1000" y="220" class="h">NTC 10K B3950 温度采集</text>
+<text x="1000" y="265" class="t">3V3 ── 10kΩ（1%）──┬── PA0</text>
+<text x="1000" y="305" class="t">　　　　　　　　　└── NTC ── GND</text>
+<text x="1000" y="340" class="s">NTC 参数须与 sensor.c 的 R0 / Beta 一致</text>
+<path d="M895 330 H940 V265 H970" class="wire orange"/>
+<!-- OLED -->
+<rect x="970" y="390" width="390" height="150" rx="16" class="panel"/>
+<text x="1000" y="430" class="h">OLED SSD1306｜软件 I²C</text>
+<text x="1000" y="475" class="t">SCL → PB6　 SDA → PB7</text><text x="1000" y="515" class="t">VCC → 3V3　 GND → 公共地</text>
+<path d="M895 420 H970" class="wire blue"/><path d="M895 465 H950 V485 H970" class="wire green"/>
+<!-- keys -->
+<rect x="970" y="570" width="390" height="210" rx="16" class="panel"/>
+<text x="1000" y="610" class="h">独立按键 × 3</text>
+<text x="1000" y="655" class="t">KEY1：PB12 ── 按键 ── GND</text>
+<text x="1000" y="700" class="t">KEY2：PB13 ── 按键 ── GND</text>
+<text x="1000" y="745" class="t">KEY3：PB14 ── 按键 ── GND</text>
+<text x="1000" y="770" class="s">内部上拉输入；按下为低电平</text>
+<path d="M895 555 H945 V655 H970" class="wire purple"/><path d="M895 600 H930 V700 H970" class="wire orange"/><path d="M895 645 H915 V745 H970" class="wire green"/>
+<!-- output -->
+<rect x="505" y="820" width="855" height="125" rx="16" fill="#fff7e8" stroke="#e4ae50" stroke-width="2"/>
+<text x="535" y="860" class="h">功率级控制信号（信号线离开面包板，进入独立驱动板）</text>
+<text x="535" y="900" class="t">PA8 → 100Ω → 加热 MOSFET Gate；PB0 → 100Ω → 风扇 MOSFET Gate</text>
+<text x="535" y="930" class="s">两路 Gate 均需各自 10kΩ Gate–Source 下拉；12V 负载电流绝不经过面包板</text>
+<path d="M895 710 H930 V885 H505" class="wire orange"/><path d="M895 755 H915 V910 H505" class="wire green"/>
+<text x="35" y="735" class="h">供电与接地原则</text><text x="35" y="775" class="t">• MCU / OLED：由 ST-Link 3V3 供电</text><text x="35" y="810" class="t">• USB-TTL：只接 TXD、RXD、GND</text><text x="35" y="845" class="t">• 12V 负载电源：独立供电，负极与 MCU GND 单点共地</text><text x="35" y="880" class="s">上电前确认开发板不存在第二路 5V/3V3 反向供电</text>
+</svg>
