@@ -81,6 +81,7 @@ TempCtrl/
 |------|------|
 | `docs/RELEASE_CHECKLIST.md` | **7 项发布清单状态**：基线统一 / NTC 灵敏度 / 术语 / 断线延迟 / IWDG / 编译测试 / GUI 闭环（含证据与阻塞项） |
 | `docs/PREBOARD_TEST_PLAN.md` | **上板前必测 7 项**：控制周期 / OLED 耗时 / UART 丢包 / NTC 噪声 / PID 整定 / GUI 启动 / 故障恢复路径（含判据与记录模板） |
+| `docs/GATE0_BENCH_TEST.md` | **Gate 0 台架操作单**：PA8 假负载阶梯波形 / 复位与看门狗 / 传感器开路短路注入，含接线图、判据与记录表 |
 | `docs/ARCHITECTURE.md` | 分层架构图、时间片表、控制数据流、状态机、设计决策、资源占用 |
 | `docs/WIRING.md` | 引脚表、**待回填的元件参数表**、NTC 分压、MOSFET 选型原则、共地要求、上电检查清单 |
 | `docs/PROTOCOL.md` | 帧格式、命令表、状态载荷、错误码（含 5/6）、实测示例帧、上位机用法 |

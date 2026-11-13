@@ -176,6 +176,8 @@ Program Size: Code=18626 RO-data=2042 RW-data=80 ZI-data=3240
 
 ## 4. 真实硬件测试（⏳ 待测试，需你执行）
 
+> Gate 0（PA8 假负载 / 复位 / 传感器注入）的具体操作单与记录表：`docs/GATE0_BENCH_TEST.md`。
+
 | # | 项目 | 步骤 | 判据 | 状态 |
 |---|------|------|------|------|
 | 1 | 上电安全 | 接 MCU+OLED+NTC（或 10k 分压），上电 | PA8/PB0 均为 0V；OLED 显示 `STB` | ⏳ |
